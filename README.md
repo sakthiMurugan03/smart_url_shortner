@@ -39,9 +39,9 @@ A full-stack URL shortener with **real-time analytics** built using FastAPI, Rea
 
 smart_url_shortner/
 ├── app/
-├── frontend/
-├── requirements.txt
-├── README.md
+    ├── frontend/
+    ├── requirements.txt
+    ├── README.md
 
 ---
 
@@ -73,7 +73,9 @@ npm run dev
 
 ## 📸 Screenshots
 
-(Add screenshots here)
+<img width="1796" height="992" alt="image" src="https://github.com/user-attachments/assets/d9ed0e9a-0dff-4a77-b290-76beb2896819" />
+<img width="1796" height="1606" alt="image" src="https://github.com/user-attachments/assets/9037ab4f-dc68-4132-b0ee-d7118fcbca70" />
+<img width="1654" height="1030" alt="image" src="https://github.com/user-attachments/assets/c55f9a35-a3a5-434e-af19-72eb9024ce5e" />
 
 ---
 
