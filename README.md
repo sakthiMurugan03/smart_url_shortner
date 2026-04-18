@@ -37,11 +37,30 @@ A full-stack URL shortener with **real-time analytics** built using FastAPI, Rea
 
 ## 📂 Project Structure
 
+```
 smart_url_shortner/
-├── app/
-    ├── frontend/
-    ├── requirements.txt
-    ├── README.md
+│
+├── app/                     # Backend (FastAPI)
+│   ├── main.py
+│   ├── routes.py
+│   ├── models.py
+│   ├── database.py
+│   ├── utils.py
+│   ├── websocket_manager.py
+│   └── __init__.py
+│
+├── frontend/                # React Frontend (Vite)
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── main.jsx
+│   │   └── styles/
+│   ├── package.json
+│   └── vite.config.js
+│
+├── requirements.txt         # Python dependencies
+├── README.md
+└── .gitignore
+```
 
 ---
 
