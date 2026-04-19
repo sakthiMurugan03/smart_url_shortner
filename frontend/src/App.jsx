@@ -4,7 +4,7 @@ import {
   CartesianGrid, Area, AreaChart, BarChart, Bar, Cell,
 } from "recharts";
 
-const API = "http://127.0.0.1:8000";
+const API = "https://smart-url-shortner.onrender.com"
 
 // Global headers helper — always reads fresh from localStorage so regenerated keys are picked up instantly
 const getHeaders = () => ({ "x-api-key": localStorage.getItem("apiKey") || "" });
