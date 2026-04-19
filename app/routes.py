@@ -11,11 +11,10 @@ import string
 from .database import SessionLocal
 from .models import URL, Click
 from .websocket_manager import clients
-from .cache import redis_client   
+from .cache import redis_client
 
 router = APIRouter()
 
-# ---------------- DB ----------------
 def get_db():
     db = SessionLocal()
     try:
@@ -23,21 +22,17 @@ def get_db():
     finally:
         db.close()
 
-# ---------------- REQUEST MODEL ----------------
 class ShortenRequest(BaseModel):
     long_url: str
     alias: str | None = None
 
-# ---------------- UTILS ----------------
 def generate_code(length=6):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
-# ---------------- API KEY ----------------
 @router.post("/generate-api-key")
 def generate_api_key():
     return {"api_key": str(uuid.uuid4())}
 
-# ---------------- API USAGE ----------------
 @router.get("/api-usage")
 def get_api_usage():
     return {
@@ -48,7 +43,6 @@ def get_api_usage():
         "status": "active"
     }
 
-# ---------------- SHORTEN ----------------
 @router.post("/shorten")
 def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db)):
     long_url = body.long_url
@@ -78,13 +72,10 @@ def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db
 def simulate_click(short_code: str):
     try:
         redis_client.incr(f"clicks:{short_code}")
-        print("🔥 Simulated click for:", short_code)
         return {"message": "click recorded"}
     except Exception as e:
-        print("❌ Error:", e)
         raise HTTPException(status_code=500, detail=str(e))
 
-# ---------------- CLICK LOG ----------------
 def log_click(short_code: str, request: Request, db: Session):
     click = Click(
         short_code=short_code,
@@ -94,13 +85,12 @@ def log_click(short_code: str, request: Request, db: Session):
     db.add(click)
     db.commit()
 
-# ---------------- REDIRECT ----------------
 @router.get("/{short_code}")
 async def redirect(short_code: str, request: Request, db: Session = Depends(get_db)):
     url = db.query(URL).filter(URL.short_code == short_code).first()
     if not url:
         raise HTTPException(status_code=404, detail="Not found")
-  
+
     log_click(short_code, request, db)
 
     for ws in clients:
@@ -110,3 +100,4 @@ async def redirect(short_code: str, request: Request, db: Session = Depends(get_
             pass
 
     return RedirectResponse(url.long_url)
+
