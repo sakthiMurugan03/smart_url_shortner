@@ -5,7 +5,7 @@ import {
   LineChart, Line,
 } from "recharts";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const BASE_URL = "https://smart-url-shortner.onrender.com";
 
 const getHeaders = () => ({
   "Content-Type": "application/json",
@@ -187,7 +187,7 @@ export default function App() {
   useEffect(() => {
     const key = localStorage.getItem("apiKey");
     if (!key) {
-      fetch(`${API}/api/generate-api-key`, { method:"POST" })
+      fetch(`${BASE_URL}/api/generate-api-key`, { method:"POST" })
         .then(res => res.ok ? res.json() : Promise.reject())
         .then(data => {
           localStorage.setItem("apiKey", data.api_key);
@@ -199,7 +199,7 @@ export default function App() {
 
   const generateKey = async () => {
     try {
-      const res = await fetch(`${API}/api/generate-api-key`, { method:"POST" });
+      const res = await fetch(`${BASE_URL}/api/generate-api-key`, { method:"POST" });
       if (!res.ok) throw new Error();
       const data = await res.json();
       localStorage.setItem("apiKey", data.api_key);
@@ -212,7 +212,7 @@ export default function App() {
 
   const fetchUsage = async () => {
     try {
-      const res = await fetch(`${API}/api/api-usage`, { headers: getHeaders() });
+      const res = await fetch(`${BASE_URL}/api/api-usage`, { headers: getHeaders() });
       if (!res.ok) return;
       const data = await res.json();
       const used = data.current_window ?? data.total_usage ?? data.used ?? data.requests ?? 0;
@@ -240,7 +240,7 @@ export default function App() {
     const code = shortUrlRef.current?.split("/").pop();
     if (!code) return;
     try {
-      const res = await fetch(`${API}/api/analytics/${code}`, { headers: getHeaders() });
+      const res = await fetch(`${BASE_URL}/api/analytics/${code}`, { headers: getHeaders() });
       if (!res.ok) return;
       const data = await res.json();
       setStats(prev => ({
@@ -277,9 +277,7 @@ export default function App() {
       reconnectTimer.current = null;
     }
 
-    const protocol = API.startsWith("https") ? "wss" : "ws";
-    const host = API.replace(/^https?:\/\//, "");
-    const ws = new WebSocket(`${protocol}://${host}/ws`);
+    const ws = new WebSocket("wss://smart-url-shortner.onrender.com/ws");
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -335,7 +333,7 @@ export default function App() {
     const fixedUrl = url.trim().startsWith("http") ? url.trim() : `https://${url.trim()}`;
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/shorten`, {
+      const res = await fetch(`${BASE_URL}/api/shorten`, {
         method:"POST",
         headers: getHeaders(),
         body: JSON.stringify({ long_url:fixedUrl, alias:alias.trim()||null }),
@@ -365,7 +363,7 @@ export default function App() {
     setALoading(true);
     try {
       const code = shortUrl.split("/").pop();
-      const res = await fetch(`${API}/api/analytics/${code}`, { headers: getHeaders() });
+      const res = await fetch(`${BASE_URL}/api/analytics/${code}`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         setStats({
@@ -393,7 +391,7 @@ export default function App() {
     setALoading(false);
   };
 
-  const downloadCSV = () => window.open(`${API}/api/export/${shortUrl.split("/").pop()}`);
+  const downloadCSV = () => window.open(`${BASE_URL}/api/export/${shortUrl.split("/").pop()}`);
 
   const handleSimulateTraffic = async () => {
     if (!shortUrlRef.current || simulating) return;
@@ -401,7 +399,7 @@ export default function App() {
     const code = shortUrlRef.current.split("/").pop();
     try {
       for (let i = 0; i < 10; i++) {
-        await fetch(`${API}/api/ping/${code}`, { headers: getHeaders() });
+        await fetch(`${BASE_URL}/api/ping/${code}`, { headers: getHeaders() });
         setTotalClicks(prev => prev + 1);
         await new Promise(res => setTimeout(res, 300));
       }
