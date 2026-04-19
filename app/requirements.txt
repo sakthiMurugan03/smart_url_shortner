@@ -1,8 +1,9 @@
 fastapi
 uvicorn
+uvicorn[standard]
+websockets
 sqlalchemy
 psycopg2-binary
 geoip2
 user-agents
 requests
-uvicorn[standard]

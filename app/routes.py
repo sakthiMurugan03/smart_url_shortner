@@ -12,6 +12,7 @@ from .models import URL, Click
 from .websocket_manager import clients
 from .utils import get_device
 from .geo import get_country
+from .redis_client import redis_client
 
 router = APIRouter()
 
@@ -29,22 +30,38 @@ class ShortenRequest(BaseModel):
 def generate_code(length=6):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
+def increment_usage(request: Request):
+    api_key = request.headers.get("x-api-key", "default")
+    key = f"rate:{api_key}"
+    redis_client.incr(key)
+    redis_client.expire(key, 60)
+
+def get_usage(request: Request):
+    api_key = request.headers.get("x-api-key", "default")
+    key = f"rate:{api_key}"
+    val = redis_client.get(key)
+    return int(val) if val else 0
+
 @router.post("/generate-api-key")
 def generate_api_key():
     return {"api_key": str(uuid.uuid4())}
 
 @router.get("/api-usage")
-def get_api_usage():
+def api_usage(request: Request):
+    current = get_usage(request)
+    limit = 50
     return {
-        "total_usage": 0,
-        "current_window": 0,
-        "limit": 50,
-        "remaining": 50,
-        "status": "active"
+        "total_usage": current,
+        "current_window": current,
+        "limit": limit,
+        "remaining": max(0, limit - current),
+        "status": "active" if current < limit else "rate_limited"
     }
 
 @router.post("/shorten")
 def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db)):
+    increment_usage(request)
+
     long_url = body.long_url
     alias = body.alias
 
@@ -68,26 +85,17 @@ def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db
 
     return {"short_url": f"https://smart-url-shortner.onrender.com/{short_code}"}
 
-def extract_ip(request: Request):
+def create_click(short_code, request, db):
+    user_agent = request.headers.get("user-agent", "")
+    device = get_device(user_agent)
+
     ip = request.headers.get("x-forwarded-for")
     if ip:
-        return ip.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+        ip = ip.split(",")[0]
+    else:
+        ip = request.client.host if request.client else "unknown"
 
-def create_click(short_code: str, request: Request, db: Session):
-    user_agent = request.headers.get("user-agent", "")
-
-    try:
-        device = get_device(user_agent)
-    except:
-        device = "unknown"
-
-    ip = extract_ip(request)
-
-    try:
-        country = get_country(ip)
-    except:
-        country = "Unknown"
+    country = get_country(ip)
 
     click = Click(
         short_code=short_code,
@@ -96,7 +104,6 @@ def create_click(short_code: str, request: Request, db: Session):
         country=country,
         timestamp=datetime.utcnow()
     )
-
     db.add(click)
     db.commit()
 
@@ -104,6 +111,8 @@ def create_click(short_code: str, request: Request, db: Session):
 
 @router.get("/ping/{short_code}")
 async def simulate_click(short_code: str, request: Request, db: Session = Depends(get_db)):
+    increment_usage(request)
+
     click = create_click(short_code, request, db)
 
     for ws in clients:
@@ -123,8 +132,9 @@ async def simulate_click(short_code: str, request: Request, db: Session = Depend
 
 @router.get("/{short_code}")
 async def redirect(short_code: str, request: Request, db: Session = Depends(get_db)):
-    url = db.query(URL).filter(URL.short_code == short_code).first()
+    increment_usage(request)
 
+    url = db.query(URL).filter(URL.short_code == short_code).first()
     if not url:
         raise HTTPException(status_code=404, detail="Not found")
 
@@ -146,18 +156,17 @@ async def redirect(short_code: str, request: Request, db: Session = Depends(get_
     return RedirectResponse(url.long_url)
 
 @router.get("/analytics/{short_code}")
-def get_analytics(short_code: str, db: Session = Depends(get_db)):
+def get_analytics(short_code: str, request: Request, db: Session = Depends(get_db)):
+    increment_usage(request)
+
     clicks = db.query(Click).filter(Click.short_code == short_code).all()
 
     device_count = {}
     country_count = {}
 
     for c in clicks:
-        device = c.device or "unknown"
-        country = c.country or "Unknown"
-
-        device_count[device] = device_count.get(device, 0) + 1
-        country_count[country] = country_count.get(country, 0) + 1
+        device_count[c.device] = device_count.get(c.device, 0) + 1
+        country_count[c.country] = country_count.get(c.country, 0) + 1
 
     return {
         "total": len(clicks),
