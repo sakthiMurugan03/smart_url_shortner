@@ -2,6 +2,5 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 psycopg2-binary
-qrcode
 python-multipart
-redis
+qrcode

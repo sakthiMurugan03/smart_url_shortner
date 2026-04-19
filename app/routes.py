@@ -10,7 +10,6 @@ import string
 from .database import SessionLocal
 from .models import URL, Click
 from .websocket_manager import clients
-from .cache import redis_client
 
 router = APIRouter()
 
@@ -68,8 +67,14 @@ def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db
     return {"short_url": f"https://smart-url-shortner.onrender.com/{short_code}"}
 
 @router.get("/ping/{short_code}")
-def simulate_click(short_code: str):
-    redis_client.incr(f"clicks:{short_code}")
+def simulate_click(short_code: str, db: Session = Depends(get_db)):
+    click = Click(
+        short_code=short_code,
+        ip_address="simulated",
+        timestamp=datetime.utcnow()
+    )
+    db.add(click)
+    db.commit()
     return {"message": "click recorded"}
 
 @router.get("/analytics/{short_code}")
@@ -87,22 +92,19 @@ def get_analytics(short_code: str, db: Session = Depends(get_db)):
         ]
     }
 
-def log_click(short_code: str, request: Request, db: Session):
-    click = Click(
-        short_code=short_code,
-        ip_address=request.client.host,
-        timestamp=datetime.utcnow()
-    )
-    db.add(click)
-    db.commit()
-
 @router.get("/{short_code}")
 async def redirect(short_code: str, request: Request, db: Session = Depends(get_db)):
     url = db.query(URL).filter(URL.short_code == short_code).first()
     if not url:
         raise HTTPException(status_code=404, detail="Not found")
 
-    log_click(short_code, request, db)
+    click = Click(
+        short_code=short_code,
+        ip_address=request.client.host if request.client else "unknown",
+        timestamp=datetime.utcnow()
+    )
+    db.add(click)
+    db.commit()
 
     for ws in clients:
         try:
