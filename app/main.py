@@ -10,6 +10,17 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
+from fastapi.responses import JSONResponse
+from fastapi import Request
+
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "*"
+    return response
+
 # ✅ CORS — production-safe
 origins = [
     "http://localhost:5173",                  # local dev
