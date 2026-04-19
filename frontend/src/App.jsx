@@ -167,6 +167,9 @@ export default function App() {
   const [spike, setSpike]           = useState(false);
   const [simulating, setSimulating] = useState(false);
 
+  const [devices, setDevices] = useState({});
+  const [countries, setCountries] = useState({});
+
   const shortUrlRef    = useRef(shortUrl);
   const wsRef          = useRef(null);
   const reconnectTimer = useRef(null);
@@ -227,11 +230,14 @@ export default function App() {
       const data = await res.json();
       setStats(prev => ({
         ...(prev || {}),
-        daily:     data.daily     ?? prev?.daily     ?? [],
-        hourly:    data.hourly    ?? prev?.hourly     ?? [],
-        devices:   data.devices   ?? prev?.devices    ?? [],
-        countries: data.countries ?? prev?.countries  ?? [],
-        recent:    data.recent    ?? prev?.recent     ?? [],
+        devices: data.devices ?? prev?.devices ?? {},
+        countries: data.countries ?? prev?.countries ?? {},
+        recent: (data.clicks || []).map(c => ({
+          ip: c.ip,
+          device: c.device,
+          country: c.country,
+          time: new Date(c.timestamp).toLocaleTimeString()
+        })) || prev?.recent || []
       }));
       setTotalClicks(prev => Math.max(prev, data.total ?? 0));
       setUniqueClients(data.unique ?? 0);
@@ -353,19 +359,31 @@ export default function App() {
       const res  = await fetch(`${API}/api/analytics/${code}`, { headers:getHeaders() });
       if (res.ok) {
         const data = await res.json();
+        
         setStats({
-          total:     data.total     ?? 0,
-          unique:    data.unique    ?? 0,
-          daily:     data.daily     ?? [],
-          hourly:    data.hourly    ?? [],
-          devices:   data.devices   ?? [],
-          countries: data.countries ?? [],
-          recent:    data.recent    ?? [],
+          total: data.total ?? 0,
+          unique: data.unique ?? 0,
+          devices: data.devices ?? {},
+          countries: data.countries ?? {},
+          recent: (data.clicks || []).map(c => ({
+            ip: c.ip,
+            device: c.device,
+            country: c.country,
+            time: new Date(c.timestamp).toLocaleTimeString()
+          }))
         });
+
+        setDevices(data.devices || {});
+        setCountries(data.countries || {});
+
         setTotalClicks(prev => Math.max(prev, data.total ?? 0));
         setUniqueClients(data.unique ?? 0);
-      } else { showToast("Something went wrong. Please try again","error"); }
-    } catch { showToast("Something went wrong. Please try again","error"); }
+      } else { 
+        showToast("Something went wrong. Please try again","error"); 
+      }
+    } catch { 
+      showToast("Something went wrong. Please try again","error"); 
+    }
     setALoading(false);
   };
 
@@ -426,12 +444,15 @@ export default function App() {
   const isThrottled = apiStats!=null && apiStats.status==="throttled";
   const barColor    = isThrottled?"#f87171":usagePct>80?"linear-gradient(90deg,#f97316,#f87171)":"linear-gradient(90deg,#6366f1,#34d399)";
 
-  const deviceData   = stats?.devices||[];
-  const mobileCount  = deviceData.find(d=>d.device==="mobile")?.count||0;
-  const desktopCount = deviceData.find(d=>d.device==="desktop")?.count||0;
-  const totalDevice  = mobileCount+desktopCount||1;
-  const mobilePct    = Math.round((mobileCount/totalDevice)*100);
-  const desktopPct   = Math.round((desktopCount/totalDevice)*100);
+  const deviceList = Object.entries(devices).map(([device, count]) => ({ device, count: Number(count) || 0 }));
+  const countryList = Object.entries(countries).map(([country, count]) => ({ country, count: Number(count) || 0 })).sort((a, b) => b.count - a.count);
+
+  const mobileCount  = deviceList.find(d => d.device === "mobile")?.count || 0;
+  const desktopCount = deviceList.find(d => d.device === "desktop")?.count || 0;
+  const totalDevice  = mobileCount + desktopCount || 1;
+  const mobilePct    = Math.round((mobileCount / totalDevice) * 100);
+  const desktopPct   = Math.round((desktopCount / totalDevice) * 100);
+
   const peakHour     = stats?.hourly?.length
     ? stats.hourly.reduce((a,b)=>b.clicks>a.clicks?b:a,stats.hourly[0]) : null;
 
@@ -630,97 +651,51 @@ export default function App() {
               )}
 
               {stats && (<>
-                {stats.daily?.length > 0 && (
-                <div style={cardWrap}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-                    <SectionLabel>Request Trend (Daily)</SectionLabel>
-                    <p style={{ fontSize:11, color:"#1e293b" }}>{stats.daily.length} day{stats.daily.length!==1?"s":""}</p>
-                  </div>
-                  <ResponsiveContainer width="100%" height={190}>
-                    <AreaChart data={stats.daily} margin={{ top:4, right:4, left:-24, bottom:0 }}>
-                      <defs>
-                        <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#6366f1" stopOpacity={0.22}/>
-                          <stop offset="100%" stopColor="#6366f1" stopOpacity={0}/>
-                        </linearGradient>
-                        <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0%" stopColor="#818cf8"/>
-                          <stop offset="100%" stopColor="#34d399"/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false}/>
-                      <XAxis dataKey="date" tick={{ fill:"#334155", fontSize:11 }} axisLine={false} tickLine={false}/>
-                      <YAxis tick={{ fill:"#334155", fontSize:11 }} axisLine={false} tickLine={false}/>
-                      <Tooltip content={<ChartTooltip/>}/>
-                      <Area type="monotone" dataKey="clicks" stroke="url(#lineGrad)" strokeWidth={2.5} fill="url(#areaFill)"
-                        dot={{ r:3.5, fill:"#818cf8", strokeWidth:0 }}
-                        activeDot={{ r:5.5, fill:"#818cf8", stroke:"#07070f", strokeWidth:2 }}/>
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-                )}
-
-                {stats.hourly?.length > 0 && (
-                <div style={cardWrap}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-                    <SectionLabel>Traffic by Hour</SectionLabel>
-                    {peakHour && <span style={{ fontSize:11, color:"#f97316", background:"rgba(249,115,22,.08)", border:"1px solid rgba(249,115,22,.2)", borderRadius:20, padding:"2px 9px" }}>Peak: {peakHour.hour}</span>}
-                  </div>
-                  <ResponsiveContainer width="100%" height={130}>
-                    <BarChart data={stats.hourly} margin={{ top:4, right:4, left:-24, bottom:0 }}>
-                      <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false}/>
-                      <XAxis dataKey="hour" tick={{ fill:"#334155", fontSize:10 }} axisLine={false} tickLine={false}/>
-                      <YAxis tick={{ fill:"#334155", fontSize:10 }} axisLine={false} tickLine={false}/>
-                      <Tooltip content={<ChartTooltip/>}/>
-                      <Bar dataKey="clicks" radius={[4,4,0,0]}>
-                        {stats.hourly.map((entry,i)=><Cell key={i} fill={entry===peakHour?"#f97316":"rgba(99,102,241,.5)"}/>)}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                )}
-
                 <div style={{ display:"flex", gap:12 }}>
                   <div style={{ ...cardWrap, flex:1 }}>
                     <SectionLabel>Device Breakdown</SectionLabel>
                     <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                      {[
-                        { label:"Desktop", pct:desktopPct, count:desktopCount, color:"#818cf8", icon:ICONS.desktop },
-                        { label:"Mobile",  pct:mobilePct,  count:mobileCount,  color:"#34d399", icon:ICONS.mobile  },
-                      ].map(({ label, pct, count, color, icon }) => (
-                        <div key={label}>
-                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:5 }}>
-                            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                              <Icon d={icon} size={12} color={color}/><span style={{ fontSize:12, color:"#475569" }}>{label}</span>
+                      {deviceList.length > 0 ? deviceList.map(({ device, count }) => {
+                        const pct = Math.round((count / (mobileCount + desktopCount || 1)) * 100);
+                        const icon = device === "mobile" ? ICONS.mobile : ICONS.desktop;
+                        const color = device === "mobile" ? "#34d399" : "#818cf8";
+                        return (
+                          <div key={device}>
+                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:5 }}>
+                              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                                <Icon d={icon} size={12} color={color}/><span style={{ fontSize:12, color:"#475569" }}>{device}</span>
+                              </div>
+                              <span style={{ fontSize:12, color, fontWeight:600 }}>{count} <span style={{ color:"#334155", fontWeight:400 }}>({pct}%)</span></span>
                             </div>
-                            <span style={{ fontSize:12, color, fontWeight:600 }}>{count} <span style={{ color:"#334155", fontWeight:400 }}>({pct}%)</span></span>
+                            <div style={{ width:"100%", height:4, background:"rgba(255,255,255,.05)", borderRadius:10, overflow:"hidden" }}>
+                              <div style={{ width:`${pct}%`, height:"100%", background:color, borderRadius:10, transition:"width .5s ease" }}/>
+                            </div>
                           </div>
-                          <div style={{ width:"100%", height:4, background:"rgba(255,255,255,.05)", borderRadius:10, overflow:"hidden" }}>
-                            <div style={{ width:`${pct}%`, height:"100%", background:color, borderRadius:10, transition:"width .5s ease" }}/>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      }) : (
+                        <p style={{ fontSize:12, color:"#475569" }}>No device data yet</p>
+                      )}
                     </div>
                   </div>
 
-                  {stats.countries?.length > 0 && (
+                  {countryList.length > 0 && (
                   <div style={{ ...cardWrap, flex:1 }}>
                     <SectionLabel>Top Countries</SectionLabel>
                     <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                      {stats.countries.map((c,i) => {
-                        const maxCount = stats.countries[0].count;
-                        const pct = Math.round((c.count/maxCount)*100);
+                      {countryList.slice(0, 5).map((c, i) => {
+                        const maxCount = countryList[0].count;
+                        const pct = Math.round((c.count / maxCount) * 100);
                         const colors = ["#818cf8","#34d399","#f97316","#f87171","#fbbf24"];
                         return (
                           <div key={i}>
                             <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
                               <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                                <Icon d={ICONS.globe} size={11} color={colors[i]}/><span style={{ fontSize:12, color:"#475569" }}>{c.country}</span>
+                                <Icon d={ICONS.globe} size={11} color={colors[i % colors.length]}/><span style={{ fontSize:12, color:"#475569" }}>{c.country}</span>
                               </div>
-                              <span style={{ fontSize:12, color:colors[i], fontWeight:600 }}>{c.count}</span>
+                              <span style={{ fontSize:12, color:colors[i % colors.length], fontWeight:600 }}>{c.count}</span>
                             </div>
                             <div style={{ width:"100%", height:3, background:"rgba(255,255,255,.05)", borderRadius:10, overflow:"hidden" }}>
-                              <div style={{ width:`${pct}%`, height:"100%", background:colors[i], borderRadius:10, transition:"width .5s ease" }}/>
+                              <div style={{ width:`${pct}%`, height:"100%", background:colors[i % colors.length], borderRadius:10, transition:"width .5s ease" }}/>
                             </div>
                           </div>
                         );
