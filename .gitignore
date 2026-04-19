@@ -5,3 +5,4 @@ __pycache__/
 GeoLite2-City.mmdb
 .env
 node_modules/
+GeoLite2-City.tar.gz
