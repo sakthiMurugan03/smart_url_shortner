@@ -10,7 +10,6 @@ import string
 from .database import SessionLocal
 from .models import URL, Click
 from .websocket_manager import clients
-from .cache import redis_client
 
 router = APIRouter()
 
