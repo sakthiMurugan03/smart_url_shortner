@@ -11,6 +11,8 @@ from .database import SessionLocal
 from .models import URL, Click
 from .websocket_manager import clients
 from .utils import get_device
+from .geo import get_country
+
 
 router = APIRouter()
 
@@ -77,7 +79,9 @@ def create_click(short_code, request, db):
     else:
         ip = request.client.host if request.client else "unknown"
 
-    country = "India"
+    from .geo import get_country
+
+    country = get_country(ip)
 
     click = Click(
         short_code=short_code,
