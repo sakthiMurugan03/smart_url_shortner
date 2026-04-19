@@ -317,27 +317,20 @@ export default function App() {
     window.open(`${API}/api/export/${code}`);
   };
 
-  /* ── Traffic simulator — uses /ping/:code to avoid redirect issues ── */
+  /* ── Traffic simulator — sends 10 sequential pings to /api/ping/:code ── */
   const simulateTraffic = async () => {
     if (!shortUrl) return showToast("Create a link first", "error");
     setSimulating(true);
     const code = shortUrl.split("/").pop();
-    let count = 0;
-    const iv = setInterval(async () => {
-      try {
+    try {
+      for (let i = 0; i < 10; i++) {
         await fetch(`${API}/api/ping/${code}`, { headers: getHeaders() });
-        count++;
-        if (count >= 10) {
-          clearInterval(iv);
-          setSimulating(false);
-          showToast("Traffic simulation complete");
-        }
-      } catch {
-        clearInterval(iv);
-        setSimulating(false);
-        showToast("Simulation failed. Try again.", "error");
       }
-    }, 500);
+      showToast("Traffic simulation complete");
+    } catch {
+      showToast("Simulation failed. Try again.", "error");
+    }
+    setSimulating(false);
   };
 
   /* ── Copy short link ── */
