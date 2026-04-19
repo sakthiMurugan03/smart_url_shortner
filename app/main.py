@@ -18,11 +18,10 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",  # allow all Vercel previews
-    allow_credentials=True,
+    allow_origins=["*"],          # ✅ allow all (safe for your project)
+    allow_credentials=False,      # ❗ IMPORTANT
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"],          # needed for x-api-key
 )
 
 # Routes
