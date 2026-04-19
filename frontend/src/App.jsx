@@ -10,8 +10,6 @@ const WS_URL = "wss://smart-url-shortner.onrender.com/ws";
 
 const getHeaders = () => ({ "x-api-key": localStorage.getItem("apiKey") || "" });
 
-const nowLabel = () => new Date().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit", second:"2-digit" });
-
 const Icon = ({ d, size = 15, color = "#475569" }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
     <path d={d} stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -373,17 +371,23 @@ export default function App() {
 
   const downloadCSV = () => window.open(`${API}/api/export/${shortUrl.split("/").pop()}`);
 
-  const simulateTraffic = async () => {
-    if (!shortUrl) return showToast("Create a link first","error");
+  const handleSimulateTraffic = async () => {
+    if (!shortUrlRef.current || simulating) return;
     setSimulating(true);
-    const code = shortUrl.split("/").pop();
+    const code = shortUrlRef.current.split("/").pop();
     try {
       for (let i = 0; i < 10; i++) {
-        await fetch(`${API}/api/ping/${code}`, { headers: getHeaders() });
-        await new Promise(r => setTimeout(r, 200));
+        await fetch(`${API}/api/ping/${code}`);
+        setTotalClicks(prev => prev + 1);
+        await new Promise(res => setTimeout(res, 300));
       }
-      showToast("Traffic simulation complete");
-    } catch { showToast("Simulation failed. Try again.","error"); }
+
+      await loadAnalytics();
+
+      alert("Traffic simulation complete");
+    } catch (err) {
+      console.error("Simulation failed", err);
+    }
     setSimulating(false);
   };
 
@@ -576,9 +580,14 @@ export default function App() {
                     {aLoading ? <Spinner size={11}/> : <Icon d={ICONS.chart} size={13} color="#64748b"/>}
                     {aLoading?"Loading…":"View Analytics"}
                   </button>
-                  <button onClick={simulateTraffic} disabled={simulating} className="action-btn" style={{ ...iconBtn, width:"auto", padding:"0 12px", gap:6, color:"#64748b", fontSize:12.5, fontWeight:500, transition:"all .2s" }}>
-                    <Icon d={ICONS.zap} size={13} color={simulating?"#f97316":"#64748b"} />
-                    <span style={{ animation:simulating?"simPulse 1s ease infinite":"none", color:simulating?"#f97316":"inherit" }}>{simulating?"Simulating traffic…":"Simulate Traffic"}</span>
+                  <button 
+                    onClick={handleSimulateTraffic}
+                    disabled={simulating}
+                    className="action-btn" 
+                    style={{ ...iconBtn, width:"auto", padding:"0 12px", gap:6, color:"#64748b", fontSize:12.5, fontWeight:500, transition:"all .2s" }}
+                  >
+                    <Icon d={ICONS.zap} size={13} color={simulating ? "#f97316" : "#64748b"} />
+                    {simulating ? "Simulating..." : "Simulate Traffic"}
                   </button>
                   <button onClick={downloadCSV} className="action-btn" style={{ ...iconBtn, width:"auto", padding:"0 12px", gap:6, color:"#64748b", fontSize:12.5, fontWeight:500, transition:"all .2s" }}>
                     <Icon d={ICONS.download} size={13} color="#64748b"/>Export CSV
