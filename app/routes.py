@@ -67,31 +67,25 @@ def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db
     return {"short_url": f"https://smart-url-shortner.onrender.com/{short_code}"}
 
 @router.get("/ping/{short_code}")
-async def simulate_click(short_code: str):
-    try:
-        redis_client.incr(f"clicks:{short_code}")
-
-        for ws in clients:
-            try:
-                await ws.send_json({
-                    "event": "click",
-                    "short_code": short_code
-                })
-            except:
-                pass
-
-        return {"message": "click recorded"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-def log_click(short_code: str, request: Request, db: Session):
+async def simulate_click(short_code: str, db: Session = Depends(get_db)):
     click = Click(
         short_code=short_code,
-        ip_address=request.client.host,
+        ip_address="simulated",
         timestamp=datetime.utcnow()
     )
     db.add(click)
     db.commit()
+
+    for ws in clients:
+        try:
+            await ws.send_json({
+                "event": "click",
+                "short_code": short_code
+            })
+        except:
+            pass
+
+    return {"message": "click recorded"}
 
 @router.get("/{short_code}")
 async def redirect(short_code: str, request: Request, db: Session = Depends(get_db)):
@@ -99,7 +93,13 @@ async def redirect(short_code: str, request: Request, db: Session = Depends(get_
     if not url:
         raise HTTPException(status_code=404, detail="Not found")
 
-    log_click(short_code, request, db)
+    click = Click(
+        short_code=short_code,
+        ip_address=request.client.host if request.client else "unknown",
+        timestamp=datetime.utcnow()
+    )
+    db.add(click)
+    db.commit()
 
     for ws in clients:
         try:
@@ -118,7 +118,8 @@ def get_analytics(short_code: str, db: Session = Depends(get_db)):
 
     return {
         "short_code": short_code,
-        "total_clicks": len(clicks),
+        "total": len(clicks),
+        "unique": len(set(c.ip_address for c in clicks)),
         "clicks": [
             {
                 "timestamp": c.timestamp,
