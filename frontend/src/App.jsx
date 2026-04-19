@@ -4,10 +4,13 @@ import {
   CartesianGrid, Area, AreaChart, BarChart, Bar, Cell,
 } from "recharts";
 
-const API = import.meta.env.VITE_API_URL
+/* ── Environment-driven API base (set in frontend/.env) ── */
+const API = import.meta.env.VITE_API_URL;
 
-// Global headers helper — always reads fresh from localStorage so regenerated keys are picked up instantly
+/* ── Auth header helper ── */
 const getHeaders = () => ({ "x-api-key": localStorage.getItem("apiKey") || "" });
+
+/* ─────────────────────── SHARED COMPONENTS ─────────────────────── */
 
 const Icon = ({ d, size = 15, color = "#475569" }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
@@ -140,6 +143,7 @@ const cardWrap = {
   borderRadius:14, padding:"16px 18px",
 };
 
+/* ═══════════════════════════════ APP ═══════════════════════════════ */
 export default function App() {
   const [url, setUrl]               = useState("");
   const [alias, setAlias]           = useState("");
@@ -165,11 +169,11 @@ export default function App() {
   const showToast = (msg, type="ok") => { setToast({msg,type}); setTimeout(()=>setToast({msg:"",type:"ok"}),3500); };
   const triggerFlash = () => { setFlash(true); setTimeout(()=>setFlash(false),700); };
 
-  // FIX 5: API key init — generate once on mount, reload so headers pick it up
+  /* ── Auto-generate API key on first load ── */
   useEffect(() => {
     const key = localStorage.getItem("apiKey");
     if (!key) {
-      fetch(`${API}/generate-api-key`, { method: "POST" })
+      fetch(`${API}/generate-api-key`, { method:"POST" })
         .then(res => res.json())
         .then(data => {
           localStorage.setItem("apiKey", data.api_key);
@@ -179,9 +183,10 @@ export default function App() {
     }
   }, []);
 
+  /* ── Regenerate key manually ── */
   const generateKey = async () => {
     try {
-      const res = await fetch(`${API}/generate-api-key`, { method: "POST" });
+      const res  = await fetch(`${API}/generate-api-key`, { method:"POST" });
       const data = await res.json();
       localStorage.setItem("apiKey", data.api_key);
       setApiKey(data.api_key);
@@ -191,51 +196,38 @@ export default function App() {
     }
   };
 
-  // FIX 2: Corrected /api-usage — status derived from numbers, not unreliable string
+  /* ── Fetch rate-limit usage ── */
   const fetchUsage = async () => {
     try {
       const res = await fetch(`${API}/api-usage`, { headers: getHeaders() });
       if (!res.ok) return;
       const data = await res.json();
-
-      // Log raw response once so you can see exactly what the backend sends
-      console.debug("[api-usage raw]", data);
-
-      // Normalise field names — backend may use different keys
       const used      = data.current_window ?? data.total_usage ?? data.used ?? data.requests ?? 0;
       const limit     = data.limit ?? data.max ?? 10;
       const remaining = data.remaining ?? Math.max(0, limit - used);
-
-      // Derive throttled purely from numbers — never trust an ambiguous status string
-      // Also honour explicit backend throttle signals as a secondary check
       const backendSaysThrottled =
         data.status === "throttled" ||
         data.status === "rate_limited" ||
         data.throttled === true ||
         data.rate_limited === true;
-
       const resolvedStatus = (backendSaysThrottled || remaining <= 0) ? "throttled" : "active";
-
       setApiStats({ current_window: used, remaining, limit, status: resolvedStatus });
     } catch {}
   };
 
-  // FIX 3: Poll every 3 s (not 100 ms), clean up on unmount; also tick the countdown
+  /* ── Poll usage every 3 s; tick countdown every 1 s ── */
   useEffect(() => {
     if (!apiKey) return;
     fetchUsage();
     const usageInterval = setInterval(fetchUsage, 3000);
-    // Countdown ticker (separate, lightweight)
     const countInterval = setInterval(() => setSecondsLeft(s => s <= 1 ? 60 : s - 1), 1000);
-    return () => {
-      clearInterval(usageInterval);
-      clearInterval(countInterval);
-    };
+    return () => { clearInterval(usageInterval); clearInterval(countInterval); };
   }, [apiKey]);
 
-  // WebSocket — real-time hit events
+  /* ── WebSocket — dynamic URL derived from API env var ── */
   useEffect(() => {
-    const ws = new WebSocket("ws://127.0.0.1:8000/ws");
+    const WS = API.replace("https", "wss").replace("http", "ws");
+    const ws = new WebSocket(`${WS}/ws`);
     ws.onopen    = () => setWsStatus("live");
     ws.onclose   = () => setWsStatus("disconnected");
     ws.onerror   = () => setWsStatus("disconnected");
@@ -254,51 +246,38 @@ export default function App() {
     return () => ws.close();
   }, []);
 
+  /* ── Shorten ── */
   const shorten = async () => {
     setAliasError(""); setAliasHint("");
     if (!url.trim()) return showToast("Enter a valid URL", "error");
-
     const fixedUrl = url.trim().startsWith("http") ? url.trim() : `https://${url.trim()}`;
-
     setLoading(true);
-
     try {
-      const res = await fetch("http://127.0.0.1:8000/shorten", {
+      const res = await fetch(`${API}/shorten`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": localStorage.getItem("apiKey")
-        },
-        body: JSON.stringify({
-          long_url: fixedUrl,
-          alias: alias || null
-        })
+        headers: { "Content-Type":"application/json", ...getHeaders() },
+        body: JSON.stringify({ long_url: fixedUrl, alias: alias.trim() || null }),
       });
-
       const data = await res.json();
-
       if (!res.ok) {
         if (res.status === 429) { showToast("Too many requests. Please wait for reset", "error"); setLoading(false); return; }
         if (res.status === 401) { showToast("API key missing or invalid", "error"); setLoading(false); return; }
         if (res.status === 409) { setAliasError("Alias already taken"); showToast("Alias already taken", "error"); setLoading(false); return; }
         throw new Error(data.detail || "Error");
       }
-
       setShortUrl(data.short_url);
       setStats(null); setLiveHits(0);
       if (alias.trim()) setAliasHint("Custom alias applied");
       showToast("Short link generated successfully");
       setSpike(true); setTimeout(() => setSpike(false), 500);
-      setSecondsLeft(60);
-      fetchUsage();
+      setSecondsLeft(60); fetchUsage();
     } catch (err) {
-      console.error(err);
       showToast(err.message || "Something went wrong. Please try again", "error");
     }
-
     setLoading(false);
   };
 
+  /* ── Load analytics ── */
   const loadAnalytics = async () => {
     setALoading(true);
     try {
@@ -306,7 +285,6 @@ export default function App() {
       const res  = await fetch(`${API}/analytics/${code}`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
-        // Store full response so total, unique, daily, hourly, devices, countries, recent are all populated
         setStats({
           total:     data.total     ?? 0,
           unique:    data.unique    ?? 0,
@@ -325,12 +303,13 @@ export default function App() {
     setALoading(false);
   };
 
-  // CSV export — opens backend export endpoint which streams the file
+  /* ── Export CSV ── */
   const downloadCSV = () => {
     const code = shortUrl.split("/").pop();
     window.open(`${API}/export/${code}`);
   };
 
+  /* ── Traffic simulator — uses /ping/:code to avoid redirect issues ── */
   const simulateTraffic = async () => {
     if (!shortUrl) return showToast("Create a link first", "error");
     setSimulating(true);
@@ -353,6 +332,7 @@ export default function App() {
     }, 500);
   };
 
+  /* ── Copy short link ── */
   const copy = () => {
     navigator.clipboard.writeText(shortUrl);
     setCopied(true);
@@ -360,6 +340,7 @@ export default function App() {
     showToast("Link copied to clipboard");
   };
 
+  /* ── Icon paths ── */
   const ICONS = {
     link:    "M6.5 9.5a4 4 0 005.657-5.657L10.5 2.19A4 4 0 004.843 7.847L6.5 9.5zm3 0a4 4 0 00-5.657 5.657l1.657 1.653A4 4 0 0011.157 8.153L9.5 9.5",
     copy:    "M5 5h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1zM3 11V3h8",
@@ -376,13 +357,13 @@ export default function App() {
     globe:   "M8 2a6 6 0 100 12A6 6 0 008 2zM2 8h12M8 2c-1.5 2-2.5 3.8-2.5 6s1 4 2.5 6M8 2c1.5 2 2.5 3.8 2.5 6s-1 4-2.5 6",
     mobile:  "M5 2h6a1 1 0 011 1v10a1 1 0 01-1 1H5a1 1 0 01-1-1V3a1 1 0 011-1zm3 10h.01",
     desktop: "M2 3h12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V4a1 1 0 011-1zm4 9h4m-2 0v1",
+    download:"M8 2v8m-3-3l3 3 3-3M3 13h10",
   };
 
+  /* ── Derived display values ── */
   const wsColor = { live:"#4ade80", connecting:"#fbbf24", disconnected:"#f87171" }[wsStatus];
   const wsLabel = { live:"Live", connecting:"Connecting…", disconnected:"Disconnected" }[wsStatus];
   const apiKeyDisplay = apiKey ? `${apiKey.slice(0,8)}••••••••${apiKey.slice(-4)}` : "Generating…";
-
-  // FIX 6: Clean percent + safe isThrottled (false when apiStats not yet loaded)
   const usagePct    = apiStats ? Math.min((apiStats.current_window / apiStats.limit) * 100, 100) : 0;
   const isThrottled = apiStats != null && apiStats.status === "throttled";
   const barColor    = isThrottled ? "#f87171" : usagePct > 80 ? "linear-gradient(90deg,#f97316,#f87171)" : "linear-gradient(90deg,#6366f1,#34d399)";
@@ -393,11 +374,11 @@ export default function App() {
   const totalDevice  = mobileCount + desktopCount || 1;
   const mobilePct    = Math.round((mobileCount  / totalDevice) * 100);
   const desktopPct   = Math.round((desktopCount / totalDevice) * 100);
-
-  const peakHour = stats?.hourly?.length
+  const peakHour     = stats?.hourly?.length
     ? stats.hourly.reduce((a, b) => b.clicks > a.clicks ? b : a, stats.hourly[0])
     : null;
 
+  /* ══════════════════════════ RENDER ══════════════════════════ */
   return (
     <>
       <style>{`
@@ -425,12 +406,13 @@ export default function App() {
         display:"flex", alignItems:"flex-start", justifyContent:"center",
         padding:"44px 16px 80px", position:"relative", overflow:"hidden",
       }}>
+        {/* Ambient glows */}
         <div style={{ position:"fixed", inset:0, pointerEvents:"none", background:"radial-gradient(ellipse 55% 45% at 15% 0%,rgba(99,102,241,.13),transparent 70%)" }} />
         <div style={{ position:"fixed", inset:0, pointerEvents:"none", background:"radial-gradient(ellipse 45% 40% at 85% 100%,rgba(16,185,129,.08),transparent 70%)" }} />
 
         <div style={{ width:"100%", maxWidth:540, position:"relative", zIndex:1 }}>
 
-          {/* NAV */}
+          {/* ── NAV ── */}
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:38 }}>
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
               <div style={{ width:35, height:35, borderRadius:10, background:"linear-gradient(135deg,#6366f1,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -447,26 +429,20 @@ export default function App() {
             </div>
           </div>
 
-          {/* HERO */}
+          {/* ── HERO ── */}
           <div style={{ marginBottom:32, textAlign:"center" }}>
             <h1 style={{ fontSize:33, fontWeight:600, color:"#f8fafc", letterSpacing:"-.8px", lineHeight:1.18, marginBottom:10 }}>
               Rate-Limited Smart Links<br />with Real-Time Analytics
             </h1>
-            <p style={{ fontSize:14.5, color:"#475569", lineHeight:1.7, maxWidth:480, margin:"0 auto", textAlign:"center" }}>
+            <p style={{ fontSize:14.5, color:"#475569", lineHeight:1.7, maxWidth:480, margin:"0 auto" }}>
               Create controlled, customizable short links with API-key access, rate limiting, and live analytics streaming.
             </p>
           </div>
 
-          {/* API KEY PANEL */}
-          <div style={{
-            marginBottom:10, background:"rgba(255,255,255,.02)",
-            border:"1px solid rgba(255,255,255,.06)", borderRadius:13, padding:"14px 16px",
-            animation:"fadeIn .3s ease",
-          }}>
+          {/* ── API KEY PANEL ── */}
+          <div style={{ marginBottom:10, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.06)", borderRadius:13, padding:"14px 16px", animation:"fadeIn .3s ease" }}>
             <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:10 }}>
-              <p style={{ fontSize:11, fontWeight:600, color:"#475569", textTransform:"uppercase", letterSpacing:".1em" }}>
-                API Access Key
-              </p>
+              <p style={{ fontSize:11, fontWeight:600, color:"#475569", textTransform:"uppercase", letterSpacing:".1em" }}>API Access Key</p>
               <InfoTip text="Required for all requests. Tracks usage and prevents abuse." />
             </div>
 
@@ -481,7 +457,7 @@ export default function App() {
                   {apiKey ? <Icon d={ICONS.key} size={13} color="#818cf8" /> : <Spinner size={11} color="#fbbf24" />}
                 </div>
                 <div style={{ minWidth:0 }}>
-                  <p style={{ fontSize:11.5, color: apiKey?"#64748b":"#fbbf24", fontFamily:"'Courier New',monospace", letterSpacing:".04em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{apiKeyDisplay}</p>
+                  <p style={{ fontSize:11.5, color:apiKey?"#64748b":"#fbbf24", fontFamily:"'Courier New',monospace", letterSpacing:".04em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{apiKeyDisplay}</p>
                   <p style={{ fontSize:10, color:"#2d3748", marginTop:2 }}>Authenticates requests and enforces rate limits per user</p>
                 </div>
               </div>
@@ -500,19 +476,20 @@ export default function App() {
               </div>
             </div>
 
+            {/* Rate limit bar */}
             {apiStats && (
               <div style={{ marginTop:14 }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:7 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:7 }}>
                     <span style={{ fontSize:11, color:"#475569" }}>
                       Requests (current window):{" "}
-                      <span style={{ color: isThrottled?"#f87171":"#94a3b8", fontWeight:600 }}>{apiStats.current_window}</span>
+                      <span style={{ color:isThrottled?"#f87171":"#94a3b8", fontWeight:600 }}>{apiStats.current_window}</span>
                       <span style={{ color:"#2d3748" }}>/{apiStats.limit}</span>
                     </span>
                     <span style={{
                       fontSize:9.5, fontWeight:600, letterSpacing:".07em", textTransform:"uppercase",
-                      color: isThrottled?"#f87171":"#4ade80",
-                      background: isThrottled?"rgba(248,113,113,.08)":"rgba(74,222,128,.08)",
+                      color:isThrottled?"#f87171":"#4ade80",
+                      background:isThrottled?"rgba(248,113,113,.08)":"rgba(74,222,128,.08)",
                       border:`1px solid ${isThrottled?"rgba(248,113,113,.2)":"rgba(74,222,128,.15)"}`,
                       borderRadius:20, padding:"2px 8px",
                     }}>
@@ -523,29 +500,15 @@ export default function App() {
                     Window resets in {secondsLeft}s
                   </span>
                 </div>
-
-                {/* FIX 6: Progress bar using clean percent */}
                 <div style={{ width:"100%", height:5, background:"rgba(255,255,255,.05)", borderRadius:10, overflow:"hidden" }}>
-                  <div style={{
-                    width:`${usagePct}%`, height:"100%", background:barColor, borderRadius:10,
-                    transition:"width .4s ease",
-                    animation:spike?"spikeAnim .4s ease":"none",
-                  }} />
+                  <div style={{ width:`${usagePct}%`, height:"100%", background:barColor, borderRadius:10, transition:"width .4s ease", animation:spike?"spikeAnim .4s ease":"none" }} />
                 </div>
-
                 <div style={{ display:"flex", justifyContent:"space-between", marginTop:6 }}>
-                  <span style={{ fontSize:11, color:"#2d3748" }}>
-                    Requests remaining: <span style={{ color:"#475569" }}>{apiStats.remaining}</span>
-                  </span>
+                  <span style={{ fontSize:11, color:"#2d3748" }}>Requests remaining: <span style={{ color:"#475569" }}>{apiStats.remaining}</span></span>
                   <span style={{ fontSize:11, color:"#2d3748" }}>{Math.round(usagePct)}% used</span>
                 </div>
-
                 {isThrottled && (
-                  <div style={{
-                    marginTop:8, padding:"7px 11px", borderRadius:8,
-                    background:"rgba(248,113,113,.06)", border:"1px solid rgba(248,113,113,.18)",
-                    fontSize:11.5, color:"#f87171",
-                  }}>
+                  <div style={{ marginTop:8, padding:"7px 11px", borderRadius:8, background:"rgba(248,113,113,.06)", border:"1px solid rgba(248,113,113,.18)", fontSize:11.5, color:"#f87171" }}>
                     ⚠ Rate limit reached. Try again after reset.
                   </div>
                 )}
@@ -553,16 +516,10 @@ export default function App() {
             )}
           </div>
 
-          {/* INPUT CARD */}
+          {/* ── INPUT CARD ── */}
           <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", borderRadius:15, padding:18 }}>
             <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
-              <Field
-                iconD={ICONS.link}
-                placeholder="Paste your long URL here…"
-                value={url}
-                onChange={e=>setUrl(e.target.value)}
-                onKeyDown={e=>e.key==="Enter"&&shorten()}
-              />
+              <Field iconD={ICONS.link} placeholder="Paste your long URL here…" value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&shorten()} />
               <button onClick={shorten} disabled={loading} className="shorten-btn" style={{
                 height:44, padding:"0 20px", flexShrink:0,
                 background:"linear-gradient(135deg,#6366f1,#06b6d4)",
@@ -574,6 +531,7 @@ export default function App() {
               </button>
             </div>
 
+            {/* Alias field */}
             <div style={{ marginTop:10 }}>
               <Field
                 iconD={ICONS.at}
@@ -590,18 +548,12 @@ export default function App() {
               )}
             </div>
 
+            {/* Result */}
             {shortUrl && (
-              <div style={{
-                marginTop:14, background:"rgba(99,102,241,.07)", border:"1px solid rgba(99,102,241,.18)",
-                borderRadius:11, padding:"13px 14px", animation:"fadeIn .3s ease",
-              }}>
-                <p style={{ fontSize:10, color:"#6366f1", textTransform:"uppercase", letterSpacing:".1em", fontWeight:600, marginBottom:6 }}>
-                  Generated Short Link
-                </p>
+              <div style={{ marginTop:14, background:"rgba(99,102,241,.07)", border:"1px solid rgba(99,102,241,.18)", borderRadius:11, padding:"13px 14px", animation:"fadeIn .3s ease" }}>
+                <p style={{ fontSize:10, color:"#6366f1", textTransform:"uppercase", letterSpacing:".1em", fontWeight:600, marginBottom:6 }}>Generated Short Link</p>
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:8 }}>
-                  <a href={shortUrl} target="_blank" rel="noreferrer" style={{ fontSize:13.5, color:"#818cf8", wordBreak:"break-all", flex:1 }}>
-                    {shortUrl}
-                  </a>
+                  <a href={shortUrl} target="_blank" rel="noreferrer" style={{ fontSize:13.5, color:"#818cf8", wordBreak:"break-all", flex:1 }}>{shortUrl}</a>
                   <div style={{ display:"flex", gap:6, flexShrink:0 }}>
                     <button onClick={copy} title="Copy link" style={iconBtn}>
                       <Icon d={copied?ICONS.check:ICONS.copy} size={14} color={copied?"#4ade80":"#64748b"} />
@@ -611,10 +563,8 @@ export default function App() {
                     </a>
                   </div>
                 </div>
-                <p style={{ fontSize:11, color:"#334155", marginBottom:10 }}>
-                  Share or test this link to generate live analytics
-                </p>
-                <div style={{ display:"flex", gap:6 }}>
+                <p style={{ fontSize:11, color:"#334155", marginBottom:10 }}>Share or test this link to generate live analytics</p>
+                <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
                   <button onClick={loadAnalytics} disabled={aLoading} className="action-btn"
                     style={{ ...iconBtn, width:"auto", padding:"0 12px", gap:6, color:"#64748b", fontSize:12.5, fontWeight:500, transition:"all .2s" }}>
                     {aLoading ? <Spinner size={11} /> : <Icon d={ICONS.chart} size={13} color="#64748b" />}
@@ -629,7 +579,7 @@ export default function App() {
                   </button>
                   <button onClick={downloadCSV} className="action-btn"
                     style={{ ...iconBtn, width:"auto", padding:"0 12px", gap:6, color:"#64748b", fontSize:12.5, fontWeight:500, transition:"all .2s" }}>
-                    <Icon d={ICONS.arrow} size={13} color="#64748b" />
+                    <Icon d={ICONS.download} size={13} color="#64748b" />
                     Export CSV
                   </button>
                 </div>
@@ -637,16 +587,18 @@ export default function App() {
             )}
           </div>
 
-          {/* ANALYTICS DASHBOARD */}
+          {/* ── ANALYTICS DASHBOARD ── */}
           {stats ? (
             <div style={{ marginTop:14, animation:"fadeIn .35s ease", display:"flex", flexDirection:"column", gap:12 }}>
 
+              {/* Stat cards */}
               <div style={{ display:"flex", gap:10 }}>
                 <StatCard label="Total Requests"          value={stats.total}  accent="#818cf8" flash={flash} />
                 <StatCard label="Unique Clients"          value={stats.unique} accent="#34d399" />
                 <StatCard label="Live Events (WebSocket)" value={liveHits}     accent="#f97316" sub="this session" flash={flash} />
               </div>
 
+              {/* Daily trend */}
               {stats.daily?.length > 0 && (
                 <div style={cardWrap}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
@@ -679,6 +631,7 @@ export default function App() {
                 </div>
               )}
 
+              {/* Hourly bar chart */}
               {stats.hourly?.length > 0 && (
                 <div style={cardWrap}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
@@ -705,6 +658,7 @@ export default function App() {
                 </div>
               )}
 
+              {/* Device + Countries row */}
               <div style={{ display:"flex", gap:12 }}>
                 <div style={{ ...cardWrap, flex:1 }}>
                   <SectionLabel>Device Breakdown</SectionLabel>
@@ -757,6 +711,7 @@ export default function App() {
                 )}
               </div>
 
+              {/* Recent access logs */}
               {stats.recent?.length > 0 && (
                 <div style={cardWrap}>
                   <SectionLabel>Recent Access Logs</SectionLabel>
@@ -768,17 +723,13 @@ export default function App() {
                         borderBottom: i < stats.recent.length-1 ? "1px solid rgba(255,255,255,.04)" : "none",
                       }}>
                         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                          <div style={{
-                            width:32, height:32, borderRadius:"50%",
-                            background:"rgba(99,102,241,.12)", border:"1px solid rgba(99,102,241,.2)",
-                            display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0,
-                          }}>
+                          <div style={{ width:32, height:32, borderRadius:"50%", background:"rgba(99,102,241,.12)", border:"1px solid rgba(99,102,241,.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
                             <Icon d={ICONS.user} size={13} color="#818cf8" />
                           </div>
                           <div>
                             <p style={{ fontSize:13, color:"#e2e8f0", fontWeight:500, fontFamily:"'Courier New',monospace" }}>{r.ip}</p>
                             <div style={{ display:"flex", gap:8, marginTop:2 }}>
-                              {r.device && <span style={{ fontSize:10, color:"#475569" }}>{r.device}</span>}
+                              {r.device  && <span style={{ fontSize:10, color:"#475569" }}>{r.device}</span>}
                               {r.country && <span style={{ fontSize:10, color:"#475569" }}>· {r.country}</span>}
                             </div>
                           </div>
@@ -792,26 +743,20 @@ export default function App() {
                   </div>
                 </div>
               )}
-
             </div>
+
           ) : shortUrl ? (
-            <div style={{
-              marginTop:14, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.05)",
-              borderRadius:14, padding:"28px 16px", textAlign:"center", animation:"fadeIn .3s ease",
-            }}>
+            <div style={{ marginTop:14, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.05)", borderRadius:14, padding:"28px 16px", textAlign:"center", animation:"fadeIn .3s ease" }}>
               <p style={{ fontSize:13, color:"#2d3748" }}>No analytics yet. Generate traffic to see data.</p>
             </div>
           ) : null}
 
-          {/* FOOTER */}
+          {/* ── FOOTER ── */}
           <div style={{ marginTop:36, textAlign:"center" }}>
-            <p style={{ fontSize:12, color:"#1e293b", marginBottom:5 }}>
-              Real-time event streaming powered by WebSockets and Redis
-            </p>
-            <p style={{ fontSize:10.5, color:"#161622", letterSpacing:".03em" }}>
-              Built with Redis caching · API-key authentication · rate limiting · real-time analytics pipeline
-            </p>
+            <p style={{ fontSize:12, color:"#1e293b", marginBottom:5 }}>Real-time event streaming powered by WebSockets and Redis</p>
+            <p style={{ fontSize:10.5, color:"#161622", letterSpacing:".03em" }}>Built with Redis caching · API-key authentication · rate limiting · real-time analytics pipeline</p>
           </div>
+
         </div>
       </div>
 
