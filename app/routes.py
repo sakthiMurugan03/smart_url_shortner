@@ -12,7 +12,7 @@ from .models import URL, Click
 from .websocket_manager import clients
 from .utils import get_device
 from .geo import get_country
-from app.redis_client import redis_client
+from .redis_client import redis_client
 
 router = APIRouter()
 
