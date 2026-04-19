@@ -10,6 +10,7 @@ import string
 from .database import SessionLocal
 from .models import URL, Click
 from .websocket_manager import clients
+from .utils import get_device
 
 router = APIRouter()
 
@@ -66,21 +67,43 @@ def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db
 
     return {"short_url": f"https://smart-url-shortner.onrender.com/{short_code}"}
 
-@router.get("/ping/{short_code}")
-async def simulate_click(short_code: str, db: Session = Depends(get_db)):
+def create_click(short_code, request, db):
+    user_agent = request.headers.get("user-agent", "")
+    device = get_device(user_agent)
+
+    ip = request.headers.get("x-forwarded-for")
+    if ip:
+        ip = ip.split(",")[0]
+    else:
+        ip = request.client.host if request.client else "unknown"
+
+    country = "India"
+
     click = Click(
         short_code=short_code,
-        ip_address="simulated",
+        ip_address=ip,
+        device=device,
+        country=country,
         timestamp=datetime.utcnow()
     )
     db.add(click)
     db.commit()
 
+    return click
+
+@router.get("/ping/{short_code}")
+async def simulate_click(short_code: str, request: Request, db: Session = Depends(get_db)):
+    click = create_click(short_code, request, db)
+
     for ws in clients:
         try:
             await ws.send_json({
                 "event": "click",
-                "short_code": short_code
+                "short_code": short_code,
+                "ip": click.ip_address,
+                "device": click.device,
+                "country": click.country,
+                "timestamp": str(click.timestamp)
             })
         except:
             pass
@@ -93,19 +116,17 @@ async def redirect(short_code: str, request: Request, db: Session = Depends(get_
     if not url:
         raise HTTPException(status_code=404, detail="Not found")
 
-    click = Click(
-        short_code=short_code,
-        ip_address=request.client.host if request.client else "unknown",
-        timestamp=datetime.utcnow()
-    )
-    db.add(click)
-    db.commit()
+    click = create_click(short_code, request, db)
 
     for ws in clients:
         try:
             await ws.send_json({
                 "event": "click",
-                "short_code": short_code
+                "short_code": short_code,
+                "ip": click.ip_address,
+                "device": click.device,
+                "country": click.country,
+                "timestamp": str(click.timestamp)
             })
         except:
             pass
@@ -116,14 +137,24 @@ async def redirect(short_code: str, request: Request, db: Session = Depends(get_
 def get_analytics(short_code: str, db: Session = Depends(get_db)):
     clicks = db.query(Click).filter(Click.short_code == short_code).all()
 
+    device_count = {}
+    country_count = {}
+
+    for c in clicks:
+        device_count[c.device] = device_count.get(c.device, 0) + 1
+        country_count[c.country] = country_count.get(c.country, 0) + 1
+
     return {
-        "short_code": short_code,
         "total": len(clicks),
         "unique": len(set(c.ip_address for c in clicks)),
+        "devices": device_count,
+        "countries": country_count,
         "clicks": [
             {
                 "timestamp": c.timestamp,
-                "ip": c.ip_address
+                "ip": c.ip_address,
+                "device": c.device,
+                "country": c.country
             }
             for c in clicks
         ]

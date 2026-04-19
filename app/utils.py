@@ -1,14 +1,11 @@
-import string
+from user_agents import parse
 
-BASE62 = string.digits + string.ascii_letters
-
-def encode_base62(num):
-    if num == 0:
-        return BASE62[0]
-
-    result = []
-    while num:
-        num, rem = divmod(num, 62)
-        result.append(BASE62[rem])
-
-    return ''.join(reversed(result))
+def get_device(user_agent):
+    ua = parse(user_agent)
+    if ua.is_mobile:
+        return "mobile"
+    elif ua.is_tablet:
+        return "tablet"
+    elif ua.is_pc:
+        return "desktop"
+    return "unknown"
