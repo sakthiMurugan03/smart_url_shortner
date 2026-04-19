@@ -7,3 +7,4 @@ psycopg2-binary
 geoip2
 user-agents
 requests
+redis
