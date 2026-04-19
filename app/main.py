@@ -1,16 +1,18 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+import threading
 
 from app.routes import router
 from app.database import Base, engine
 from app.websocket_manager import clients
+from app.worker import sync_clicks  # ✅ import worker
 
 # Create tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# ✅ CORS (keep this as is)
+# ✅ CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,8 +21,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ IMPORTANT FIX (this is what you chose)
+# ✅ API routes
 app.include_router(router, prefix="/api")
+
+# ✅ START BACKGROUND WORKER (FREE OPTION)
+@app.on_event("startup")
+def start_background_worker():
+    thread = threading.Thread(target=sync_clicks, daemon=True)
+    thread.start()
 
 # Health check
 @app.get("/")
