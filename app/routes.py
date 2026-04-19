@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -10,6 +11,7 @@ import string
 from .database import SessionLocal
 from .models import URL, Click
 from .websocket_manager import clients
+from .cache import redis_client   
 
 router = APIRouter()
 
@@ -72,6 +74,16 @@ def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db
 
     return {"short_url": f"https://smart-url-shortner.onrender.com/{short_code}"}
 
+@router.get("/ping/{short_code}")
+def simulate_click(short_code: str):
+    try:
+        redis_client.incr(f"clicks:{short_code}")
+        print("🔥 Simulated click for:", short_code)
+        return {"message": "click recorded"}
+    except Exception as e:
+        print("❌ Error:", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
 # ---------------- CLICK LOG ----------------
 def log_click(short_code: str, request: Request, db: Session):
     click = Click(
@@ -88,7 +100,7 @@ async def redirect(short_code: str, request: Request, db: Session = Depends(get_
     url = db.query(URL).filter(URL.short_code == short_code).first()
     if not url:
         raise HTTPException(status_code=404, detail="Not found")
-
+  
     log_click(short_code, request, db)
 
     for ws in clients:
