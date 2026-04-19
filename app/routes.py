@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -76,6 +75,22 @@ def simulate_click(short_code: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/analytics/{short_code}")
+def get_analytics(short_code: str, db: Session = Depends(get_db)):
+    clicks = db.query(Click).filter(Click.short_code == short_code).all()
+
+    return {
+        "short_code": short_code,
+        "total_clicks": len(clicks),
+        "clicks": [
+            {
+                "timestamp": c.timestamp,
+                "ip": c.ip_address
+            }
+            for c in clicks
+        ]
+    }
+
 def log_click(short_code: str, request: Request, db: Session):
     click = Click(
         short_code=short_code,
@@ -100,20 +115,3 @@ async def redirect(short_code: str, request: Request, db: Session = Depends(get_
             pass
 
     return RedirectResponse(url.long_url)
-
-@router.get("/analytics/{short_code}")
-def get_analytics(short_code: str, db: Session = Depends(get_db)):
-    clicks = db.query(Click).filter(Click.short_code == short_code).all()
-
-    return {
-        "short_code": short_code,
-        "total_clicks": len(clicks),
-        "clicks": [
-            {
-                "timestamp": c.timestamp,
-                "ip": c.ip_address
-            }
-            for c in clicks
-        ]
-    }
-
