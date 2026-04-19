@@ -13,7 +13,6 @@ from .websocket_manager import clients
 from .utils import get_device
 from .geo import get_country
 
-
 router = APIRouter()
 
 def get_db():
@@ -69,19 +68,26 @@ def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db
 
     return {"short_url": f"https://smart-url-shortner.onrender.com/{short_code}"}
 
-def create_click(short_code, request, db):
-    user_agent = request.headers.get("user-agent", "")
-    device = get_device(user_agent)
-
+def extract_ip(request: Request):
     ip = request.headers.get("x-forwarded-for")
     if ip:
-        ip = ip.split(",")[0]
-    else:
-        ip = request.client.host if request.client else "unknown"
+        return ip.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
-    from .geo import get_country
+def create_click(short_code: str, request: Request, db: Session):
+    user_agent = request.headers.get("user-agent", "")
 
-    country = get_country(ip)
+    try:
+        device = get_device(user_agent)
+    except:
+        device = "unknown"
+
+    ip = extract_ip(request)
+
+    try:
+        country = get_country(ip)
+    except:
+        country = "Unknown"
 
     click = Click(
         short_code=short_code,
@@ -90,6 +96,7 @@ def create_click(short_code, request, db):
         country=country,
         timestamp=datetime.utcnow()
     )
+
     db.add(click)
     db.commit()
 
@@ -117,6 +124,7 @@ async def simulate_click(short_code: str, request: Request, db: Session = Depend
 @router.get("/{short_code}")
 async def redirect(short_code: str, request: Request, db: Session = Depends(get_db)):
     url = db.query(URL).filter(URL.short_code == short_code).first()
+
     if not url:
         raise HTTPException(status_code=404, detail="Not found")
 
@@ -145,8 +153,11 @@ def get_analytics(short_code: str, db: Session = Depends(get_db)):
     country_count = {}
 
     for c in clicks:
-        device_count[c.device] = device_count.get(c.device, 0) + 1
-        country_count[c.country] = country_count.get(c.country, 0) + 1
+        device = c.device or "unknown"
+        country = c.country or "Unknown"
+
+        device_count[device] = device_count.get(device, 0) + 1
+        country_count[country] = country_count.get(country, 0) + 1
 
     return {
         "total": len(clicks),

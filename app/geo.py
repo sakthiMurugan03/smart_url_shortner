@@ -1,27 +1,31 @@
-import geoip2.database
 import os
-import random
+import geoip2.database
+import requests
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "GeoLite2-City.mmdb")
 
 reader = None
 
-try:
+if os.path.exists(DB_PATH):
     reader = geoip2.database.Reader(DB_PATH)
-except:
-    reader = None
-
 
 def get_country(ip):
-    if ip in ("127.0.0.1", "localhost"):
-        return random.choice(["India", "USA", "Germany", "UK"])
-
-    if not reader:
+    if not ip or ip == "unknown":
         return "Unknown"
 
     try:
-        response = reader.city(ip)
-        return response.country.name or "Unknown"
+        if reader:
+            response = reader.city(ip)
+            country = response.country.name
+            if country:
+                return country
+    except:
+        pass
+
+    try:
+        res = requests.get(f"http://ip-api.com/json/{ip}", timeout=2)
+        data = res.json()
+        return data.get("country", "Unknown")
     except:
         return "Unknown"
