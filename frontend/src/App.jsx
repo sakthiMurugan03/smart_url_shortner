@@ -5,7 +5,7 @@ import {
 } from "recharts";
 
 /* ── Environment-driven API base (set in frontend/.env) ── */
-const API = import.meta.env.VITE_API_URL;
+const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 /* ── Auth header helper ── */
 const getHeaders = () => ({ "x-api-key": localStorage.getItem("apiKey") || "" });
@@ -173,8 +173,8 @@ export default function App() {
   useEffect(() => {
     const key = localStorage.getItem("apiKey");
     if (!key) {
-      fetch(`${API}/generate-api-key`, { method:"POST" })
-        .then(res => res.json())
+      fetch(`${API}/api/generate-api-key`, { method:"POST" })
+        .then(res => { if (!res.ok) throw new Error("Failed"); return res.json(); })
         .then(data => {
           localStorage.setItem("apiKey", data.api_key);
           setApiKey(data.api_key);
@@ -186,7 +186,8 @@ export default function App() {
   /* ── Regenerate key manually ── */
   const generateKey = async () => {
     try {
-      const res  = await fetch(`${API}/generate-api-key`, { method:"POST" });
+      const res  = await fetch(`${API}/api/generate-api-key`, { method:"POST" });
+      if (!res.ok) throw new Error("Failed to generate key");
       const data = await res.json();
       localStorage.setItem("apiKey", data.api_key);
       setApiKey(data.api_key);
@@ -199,7 +200,7 @@ export default function App() {
   /* ── Fetch rate-limit usage ── */
   const fetchUsage = async () => {
     try {
-      const res = await fetch(`${API}/api-usage`, { headers: getHeaders() });
+      const res = await fetch(`${API}/api/api-usage`, { headers: getHeaders() });
       if (!res.ok) return;
       const data = await res.json();
       const used      = data.current_window ?? data.total_usage ?? data.used ?? data.requests ?? 0;
@@ -224,26 +225,33 @@ export default function App() {
     return () => { clearInterval(usageInterval); clearInterval(countInterval); };
   }, [apiKey]);
 
-  /* ── WebSocket — dynamic URL derived from API env var ── */
+  /* ── WebSocket — dynamic URL derived from API env var, with auto-reconnect ── */
   useEffect(() => {
-    const WS = API.replace("https", "wss").replace("http", "ws");
-    const ws = new WebSocket(`${WS}/ws`);
-    ws.onopen    = () => setWsStatus("live");
-    ws.onclose   = () => setWsStatus("disconnected");
-    ws.onerror   = () => setWsStatus("disconnected");
-    ws.onmessage = () => {
-      if (!shortUrlRef.current) return;
-      setLiveHits(n => n + 1);
-      triggerFlash();
-      (async () => {
-        try {
-          const code = shortUrlRef.current.split("/").pop();
-          const res  = await fetch(`${API}/analytics/${code}`, { headers: getHeaders() });
-          if (res.ok) setStats(await res.json());
-        } catch {}
-      })();
+    let ws;
+    const connect = () => {
+      const WS = API.startsWith("https") ? API.replace("https", "wss") : API.replace("http", "ws");
+      ws = new WebSocket(`${WS}/ws`);
+      ws.onopen    = () => setWsStatus("live");
+      ws.onclose   = () => {
+        setWsStatus("disconnected");
+        setTimeout(connect, 2000);
+      };
+      ws.onerror   = () => ws.close();
+      ws.onmessage = () => {
+        if (!shortUrlRef.current) return;
+        setLiveHits(n => n + 1);
+        triggerFlash();
+        (async () => {
+          try {
+            const code = shortUrlRef.current.split("/").pop();
+            const res  = await fetch(`${API}/api/analytics/${code}`, { headers: getHeaders() });
+            if (res.ok) setStats(await res.json());
+          } catch {}
+        })();
+      };
     };
-    return () => ws.close();
+    connect();
+    return () => ws?.close();
   }, []);
 
   /* ── Shorten ── */
@@ -253,7 +261,7 @@ export default function App() {
     const fixedUrl = url.trim().startsWith("http") ? url.trim() : `https://${url.trim()}`;
     setLoading(true);
     try {
-      const res = await fetch(`${API}/shorten`, {
+      const res = await fetch(`${API}/api/shorten`, {
         method: "POST",
         headers: { "Content-Type":"application/json", ...getHeaders() },
         body: JSON.stringify({ long_url: fixedUrl, alias: alias.trim() || null }),
@@ -282,7 +290,7 @@ export default function App() {
     setALoading(true);
     try {
       const code = shortUrl.split("/").pop();
-      const res  = await fetch(`${API}/analytics/${code}`, { headers: getHeaders() });
+      const res  = await fetch(`${API}/api/analytics/${code}`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         setStats({
@@ -306,7 +314,7 @@ export default function App() {
   /* ── Export CSV ── */
   const downloadCSV = () => {
     const code = shortUrl.split("/").pop();
-    window.open(`${API}/export/${code}`);
+    window.open(`${API}/api/export/${code}`);
   };
 
   /* ── Traffic simulator — uses /ping/:code to avoid redirect issues ── */
@@ -317,7 +325,7 @@ export default function App() {
     let count = 0;
     const iv = setInterval(async () => {
       try {
-        await fetch(`${API}/ping/${code}`, { headers: getHeaders() });
+        await fetch(`${API}/api/ping/${code}`, { headers: getHeaders() });
         count++;
         if (count >= 10) {
           clearInterval(iv);

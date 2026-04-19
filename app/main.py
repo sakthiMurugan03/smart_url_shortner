@@ -5,12 +5,12 @@ from app.routes import router
 from app.database import Base, engine
 from app.websocket_manager import clients
 
-# Create DB tables
+# Create tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# ✅ CORS (works for local + Vercel)
+# ✅ CORS (keep this as is)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,17 +19,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ IMPORTANT — prefix added
+# ✅ IMPORTANT FIX (this is what you chose)
 app.include_router(router, prefix="/api")
 
-
-# ✅ Root test
+# Health check
 @app.get("/")
 def root():
     return {"status": "API running 🚀"}
 
-
-# ✅ WebSocket
+# WebSocket
 @app.websocket("/ws")
 async def websocket(ws: WebSocket):
     await ws.accept()
