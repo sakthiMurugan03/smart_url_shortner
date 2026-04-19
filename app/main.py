@@ -5,6 +5,7 @@ from app.routes import router
 from app.database import Base, engine
 from app.websocket_manager import clients
 
+Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
