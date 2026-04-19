@@ -5,45 +5,31 @@ from app.routes import router
 from app.database import Base, engine
 from app.websocket_manager import clients
 
-# Create tables
+# Create DB tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-from fastapi.responses import JSONResponse
-from fastapi import Request
-
-@app.middleware("http")
-async def add_cors_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "*"
-    return response
-
-# ✅ CORS — production-safe
-origins = [
-    "http://localhost:5173",                  # local dev
-    "https://smart-url-shortner.vercel.app",  # your main Vercel URL
-]
-
+# ✅ CORS (works for local + Vercel)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # ✅ allow all (safe for your project)
-    allow_credentials=False,      # ❗ IMPORTANT
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
-    allow_headers=["*"],          # needed for x-api-key
+    allow_headers=["*"],
 )
 
-# Routes
-app.include_router(router)
+# ✅ IMPORTANT — prefix added
+app.include_router(router, prefix="/api")
 
-# Optional health check (nice to have)
+
+# ✅ Root test
 @app.get("/")
 def root():
     return {"status": "API running 🚀"}
 
-# WebSocket
+
+# ✅ WebSocket
 @app.websocket("/ws")
 async def websocket(ws: WebSocket):
     await ws.accept()

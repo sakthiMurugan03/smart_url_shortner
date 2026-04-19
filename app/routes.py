@@ -1,18 +1,15 @@
 from fastapi import APIRouter, HTTPException, Request, Depends
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
 import uuid
 import random
 import string
-import csv
-from io import StringIO
 
 from .database import SessionLocal
 from .models import URL, Click
 from .websocket_manager import clients
-from .geo import get_country
 
 router = APIRouter()
 
@@ -33,20 +30,12 @@ class ShortenRequest(BaseModel):
 def generate_code(length=6):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
-def get_device(user_agent: str):
-    ua = user_agent.lower()
-    if "mobile" in ua:
-        return "mobile"
-    elif "tablet" in ua:
-        return "tablet"
-    else:
-        return "desktop"
-
-# ---------------- API KEY (NO REDIS) ----------------
+# ---------------- API KEY ----------------
 @router.post("/generate-api-key")
 def generate_api_key():
     return {"api_key": str(uuid.uuid4())}
 
+# ---------------- API USAGE ----------------
 @router.get("/api-usage")
 def get_api_usage():
     return {
@@ -83,82 +72,15 @@ def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db
 
     return {"short_url": f"https://smart-url-shortner.onrender.com/{short_code}"}
 
-# ---------------- CLICK LOGGER ----------------
+# ---------------- CLICK LOG ----------------
 def log_click(short_code: str, request: Request, db: Session):
-    ip = request.client.host
-    user_agent = request.headers.get("user-agent", "")
-
-    country = get_country(ip)
-    device = get_device(user_agent)
-
     click = Click(
         short_code=short_code,
-        ip_address=ip,
-        country=country,
-        device=device,
+        ip_address=request.client.host,
         timestamp=datetime.utcnow()
     )
-
     db.add(click)
     db.commit()
-
-# ---------------- ANALYTICS ----------------
-@router.get("/analytics/{short_code}")
-def analytics(short_code: str, db: Session = Depends(get_db)):
-    clicks = db.query(Click).filter(Click.short_code == short_code).all()
-
-    total = len(clicks)
-    unique = len(set(c.ip_address for c in clicks))
-
-    return {
-        "total": total,
-        "unique": unique
-    }
-
-# ---------------- CSV EXPORT ----------------
-@router.get("/export/{short_code}")
-def export_csv(short_code: str, db: Session = Depends(get_db)):
-    clicks = db.query(Click).filter(Click.short_code == short_code).all()
-
-    output = StringIO()
-    writer = csv.writer(output)
-
-    writer.writerow(["IP", "Country", "Device", "Timestamp"])
-
-    for c in clicks:
-        writer.writerow([
-            c.ip_address,
-            c.country or "Unknown",
-            c.device or "unknown",
-            c.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-        ])
-
-    output.seek(0)
-
-    return StreamingResponse(
-        output,
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename={short_code}_analytics.csv"
-        }
-    )
-
-# ---------------- PING ----------------
-@router.get("/ping/{short_code}")
-async def ping(short_code: str, request: Request, db: Session = Depends(get_db)):
-    url = db.query(URL).filter(URL.short_code == short_code).first()
-    if not url:
-        raise HTTPException(status_code=404, detail="Not found")
-
-    log_click(short_code, request, db)
-
-    for ws in clients:
-        try:
-            await ws.send_json({"event": "click", "short_code": short_code})
-        except:
-            pass
-
-    return {"ok": True}
 
 # ---------------- REDIRECT ----------------
 @router.get("/{short_code}")
