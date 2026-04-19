@@ -11,12 +11,10 @@ from io import StringIO
 
 from .database import SessionLocal
 from .models import URL, Click
-from .cache import redis_client
 from .websocket_manager import clients
 from .geo import get_country
 
 router = APIRouter()
-
 
 # ---------------- DB ----------------
 def get_db():
@@ -26,17 +24,14 @@ def get_db():
     finally:
         db.close()
 
-
 # ---------------- REQUEST MODEL ----------------
 class ShortenRequest(BaseModel):
     long_url: str
     alias: str | None = None
 
-
 # ---------------- UTILS ----------------
 def generate_code(length=6):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
-
 
 def get_device(user_agent: str):
     ua = user_agent.lower()
@@ -47,71 +42,24 @@ def get_device(user_agent: str):
     else:
         return "desktop"
 
-
-def api_rate_limit(api_key: str, limit: int = 50, window: int = 60):
-    key = f"apikey_rate:{api_key}"
-
-    current = redis_client.get(key)
-    if current and int(current) >= limit:
-        raise HTTPException(status_code=429, detail="Rate limit exceeded")
-
-    pipe = redis_client.pipeline()
-    pipe.incr(key, 1)
-    pipe.expire(key, window)
-    pipe.execute()
-
-
-def track_api_usage(api_key: str):
-    redis_client.incr(f"usage:{api_key}")
-
-
-# ---------------- API KEY ----------------
+# ---------------- API KEY (NO REDIS) ----------------
 @router.post("/generate-api-key")
 def generate_api_key():
-    key = str(uuid.uuid4())
-    redis_client.set(f"apikey:{key}", "active")
-    return {"api_key": key}
-
+    return {"api_key": str(uuid.uuid4())}
 
 @router.get("/api-usage")
-def get_api_usage(request: Request):
-    api_key = request.headers.get("x-api-key")
-
-    if not api_key or not redis_client.get(f"apikey:{api_key}"):
-        return {
-            "total_usage": 0,
-            "current_window": 0,
-            "limit": 50,
-            "remaining": 50,
-            "status": "inactive"
-        }
-
-    usage = int(redis_client.get(f"usage:{api_key}") or 0)
-    rate = int(redis_client.get(f"apikey_rate:{api_key}") or 0)
-
+def get_api_usage():
     return {
-        "total_usage": usage,
-        "current_window": rate,
+        "total_usage": 0,
+        "current_window": 0,
         "limit": 50,
-        "remaining": max(0, 50 - rate),
-        "status": "throttled" if rate >= 50 else "active"
+        "remaining": 50,
+        "status": "active"
     }
-
 
 # ---------------- SHORTEN ----------------
 @router.post("/shorten")
 def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db)):
-    api_key = request.headers.get("x-api-key")
-
-    if not api_key:
-        raise HTTPException(status_code=401, detail="API key missing")
-
-    if not redis_client.get(f"apikey:{api_key}"):
-        raise HTTPException(status_code=401, detail="Invalid API key")
-
-    api_rate_limit(api_key)
-    track_api_usage(api_key)
-
     long_url = body.long_url
     alias = body.alias
 
@@ -133,8 +81,7 @@ def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db
     db.add(url)
     db.commit()
 
-    return {"short_url": f"http://127.0.0.1:8000/{short_code}"}
-
+    return {"short_url": f"https://smart-url-shortner.onrender.com/{short_code}"}
 
 # ---------------- CLICK LOGGER ----------------
 def log_click(short_code: str, request: Request, db: Session):
@@ -155,9 +102,6 @@ def log_click(short_code: str, request: Request, db: Session):
     db.add(click)
     db.commit()
 
-    redis_client.incr(f"clicks:{short_code}")
-
-
 # ---------------- ANALYTICS ----------------
 @router.get("/analytics/{short_code}")
 def analytics(short_code: str, db: Session = Depends(get_db)):
@@ -166,44 +110,10 @@ def analytics(short_code: str, db: Session = Depends(get_db)):
     total = len(clicks)
     unique = len(set(c.ip_address for c in clicks))
 
-    daily_map = {}
-    hourly_map = {}
-    device_map = {}
-    country_map = {}
-
-    for c in clicks:
-        day = str(c.timestamp.date())
-        hour = c.timestamp.strftime("%H:00")
-
-        daily_map[day] = daily_map.get(day, 0) + 1
-        hourly_map[hour] = hourly_map.get(hour, 0) + 1
-
-        d = c.device or "unknown"
-        device_map[d] = device_map.get(d, 0) + 1
-
-        country = c.country or "Unknown"
-        country_map[country] = country_map.get(country, 0) + 1
-
-    recent = [
-        {
-            "ip": c.ip_address,
-            "country": c.country or "Unknown",
-            "device": c.device or "unknown",
-            "time": c.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-        }
-        for c in sorted(clicks, key=lambda x: x.timestamp, reverse=True)[:20]
-    ]
-
     return {
         "total": total,
-        "unique": unique,
-        "daily": [{"date": k, "clicks": v} for k, v in daily_map.items()],
-        "hourly": [{"hour": k, "clicks": v} for k, v in hourly_map.items()],
-        "devices": [{"device": k, "count": v} for k, v in device_map.items()],
-        "countries": [{"country": k, "count": v} for k, v in country_map.items()],
-        "recent": recent
+        "unique": unique
     }
-
 
 # ---------------- CSV EXPORT ----------------
 @router.get("/export/{short_code}")
@@ -233,7 +143,6 @@ def export_csv(short_code: str, db: Session = Depends(get_db)):
         }
     )
 
-
 # ---------------- PING ----------------
 @router.get("/ping/{short_code}")
 async def ping(short_code: str, request: Request, db: Session = Depends(get_db)):
@@ -250,7 +159,6 @@ async def ping(short_code: str, request: Request, db: Session = Depends(get_db))
             pass
 
     return {"ok": True}
-
 
 # ---------------- REDIRECT ----------------
 @router.get("/{short_code}")

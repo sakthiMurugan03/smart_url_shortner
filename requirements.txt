@@ -33,9 +33,7 @@ python-dotenv==1.2.2
 python-jose==3.5.0
 PyYAML==6.0.3
 qrcode==8.2
-redis==7.4.0
 requests==2.33.1
-rq==2.8.0
 rsa==4.9.1
 six==1.17.0
 SQLAlchemy==2.0.49
