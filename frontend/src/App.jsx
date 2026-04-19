@@ -6,9 +6,11 @@ import {
 } from "recharts";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
-const WS_URL = "wss://smart-url-shortner.onrender.com/ws";
 
-const getHeaders = () => ({ "x-api-key": localStorage.getItem("apiKey") || "" });
+const getHeaders = () => ({
+  "Content-Type": "application/json",
+  "x-api-key": localStorage.getItem("apiKey") || ""
+});
 
 const Icon = ({ d, size = 15, color = "#475569" }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
@@ -58,12 +60,8 @@ const ChartTooltip = ({ active, payload, label }) => {
 
 const Field = ({ iconD, placeholder, value, onChange, onKeyDown, error, hint }) => {
   const [focused, setFocused] = useState(false);
-  const borderColor = error
-    ? "rgba(248,113,113,.6)"
-    : focused ? "rgba(99,102,241,.4)" : "rgba(255,255,255,.07)";
-  const bg = error
-    ? "rgba(248,113,113,.04)"
-    : focused ? "rgba(99,102,241,.05)" : "rgba(255,255,255,.03)";
+  const borderColor = error ? "rgba(248,113,113,.6)" : focused ? "rgba(99,102,241,.4)" : "rgba(255,255,255,.07)";
+  const bg = error ? "rgba(248,113,113,.04)" : focused ? "rgba(99,102,241,.05)" : "rgba(255,255,255,.03)";
   return (
     <div style={{ flex:1 }}>
       <div style={{ position:"relative" }}>
@@ -142,62 +140,74 @@ const cardWrap = {
 };
 
 export default function App() {
-  const [url, setUrl]               = useState("");
-  const [alias, setAlias]           = useState("");
+  const [url, setUrl] = useState("");
+  const [alias, setAlias] = useState("");
   const [aliasError, setAliasError] = useState("");
-  const [aliasHint, setAliasHint]   = useState("");
-  const [shortUrl, setShortUrl]     = useState("");
-  const [stats, setStats]           = useState(null);
-  const [wsStatus, setWsStatus]     = useState("connecting");
+  const [aliasHint, setAliasHint] = useState("");
+  const [shortUrl, setShortUrl] = useState("");
+  const [stats, setStats] = useState(null);
+  const [wsStatus, setWsStatus] = useState("connecting");
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const [loading, setLoading]       = useState(false);
-  const [aLoading, setALoading]     = useState(false);
-  const [copied, setCopied]         = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [aLoading, setALoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const [totalClicks, setTotalClicks] = useState(0);
   const [uniqueClients, setUniqueClients] = useState(0);
   const [liveEvents, setLiveEvents] = useState(0);
-  const [liveChart, setLiveChart]   = useState([]);
+  const [liveChart, setLiveChart] = useState([]);
 
-  const [flash, setFlash]           = useState(false);
-  const [toast, setToast]           = useState({ msg:"", type:"ok" });
-  const [apiKey, setApiKey]         = useState(localStorage.getItem("apiKey") || "");
-  const [apiStats, setApiStats]     = useState(null);
+  const [flash, setFlash] = useState(false);
+  const [toast, setToast] = useState({ msg:"", type:"ok" });
+  const [apiKey, setApiKey] = useState(localStorage.getItem("apiKey") || "");
+  const [apiStats, setApiStats] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(60);
-  const [spike, setSpike]           = useState(false);
+  const [spike, setSpike] = useState(false);
   const [simulating, setSimulating] = useState(false);
 
   const [devices, setDevices] = useState({});
   const [countries, setCountries] = useState({});
 
-  const shortUrlRef    = useRef(shortUrl);
-  const wsRef          = useRef(null);
+  const shortUrlRef = useRef(shortUrl);
+  const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
-  const fallbackTimer  = useRef(null);
-  shortUrlRef.current  = shortUrl;
+  const fallbackTimer = useRef(null);
+  shortUrlRef.current = shortUrl;
 
-  const showToast    = (msg, type="ok") => { setToast({msg,type}); setTimeout(()=>setToast({msg:"",type:"ok"}),3500); };
-  const triggerFlash = () => { setFlash(true); setTimeout(()=>setFlash(false),700); };
+  const showToast = (msg, type="ok") => {
+    setToast({msg, type});
+    setTimeout(() => setToast({msg:"", type:"ok"}), 3500);
+  };
+
+  const triggerFlash = () => {
+    setFlash(true);
+    setTimeout(() => setFlash(false), 700);
+  };
 
   useEffect(() => {
     const key = localStorage.getItem("apiKey");
     if (!key) {
       fetch(`${API}/api/generate-api-key`, { method:"POST" })
-        .then(res => { if (!res.ok) throw new Error("Failed"); return res.json(); })
-        .then(data => { localStorage.setItem("apiKey", data.api_key); setApiKey(data.api_key); })
+        .then(res => res.ok ? res.json() : Promise.reject())
+        .then(data => {
+          localStorage.setItem("apiKey", data.api_key);
+          setApiKey(data.api_key);
+        })
         .catch(() => showToast("Failed to generate API key", "error"));
     }
   }, []);
 
   const generateKey = async () => {
     try {
-      const res  = await fetch(`${API}/api/generate-api-key`, { method:"POST" });
+      const res = await fetch(`${API}/api/generate-api-key`, { method:"POST" });
       if (!res.ok) throw new Error();
       const data = await res.json();
       localStorage.setItem("apiKey", data.api_key);
       setApiKey(data.api_key);
       showToast("API key generated");
-    } catch { showToast("Failed to generate API key", "error"); }
+    } catch {
+      showToast("Failed to generate API key", "error");
+    }
   };
 
   const fetchUsage = async () => {
@@ -205,11 +215,16 @@ export default function App() {
       const res = await fetch(`${API}/api/api-usage`, { headers: getHeaders() });
       if (!res.ok) return;
       const data = await res.json();
-      const used      = data.current_window ?? data.total_usage ?? data.used ?? data.requests ?? 0;
-      const limit     = data.limit ?? data.max ?? 10;
+      const used = data.current_window ?? data.total_usage ?? data.used ?? data.requests ?? 0;
+      const limit = data.limit ?? data.max ?? 10;
       const remaining = data.remaining ?? Math.max(0, limit - used);
       const throttled = data.status==="throttled"||data.status==="rate_limited"||data.throttled===true||data.rate_limited===true;
-      setApiStats({ current_window:used, remaining, limit, status:(throttled||remaining<=0)?"throttled":"active" });
+      setApiStats({
+        current_window: used,
+        remaining,
+        limit,
+        status: (throttled || remaining <= 0) ? "throttled" : "active"
+      });
     } catch {}
   };
 
@@ -217,7 +232,7 @@ export default function App() {
     if (!apiKey) return;
     fetchUsage();
     const usageIv = setInterval(fetchUsage, 3000);
-    const countIv = setInterval(() => setSecondsLeft(s => s<=1 ? 60 : s-1), 1000);
+    const countIv = setInterval(() => setSecondsLeft(s => s <= 1 ? 60 : s - 1), 1000);
     return () => { clearInterval(usageIv); clearInterval(countIv); };
   }, [apiKey]);
 
@@ -230,14 +245,14 @@ export default function App() {
       const data = await res.json();
       setStats(prev => ({
         ...(prev || {}),
-        devices: data.devices ?? prev?.devices ?? {},
-        countries: data.countries ?? prev?.countries ?? {},
+        devices: data.devices || {},
+        countries: data.countries || {},
         recent: (data.clicks || []).map(c => ({
           ip: c.ip,
           device: c.device,
           country: c.country,
           time: new Date(c.timestamp).toLocaleTimeString()
-        })) || prev?.recent || []
+        }))
       }));
       setTotalClicks(prev => Math.max(prev, data.total ?? 0));
       setUniqueClients(data.unique ?? 0);
@@ -262,17 +277,17 @@ export default function App() {
       reconnectTimer.current = null;
     }
 
-    const ws = new WebSocket(WS_URL);
+    const protocol = API.startsWith("https") ? "wss" : "ws";
+    const host = API.replace(/^https?:\/\//, "");
+    const ws = new WebSocket(`${protocol}://${host}/ws`);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log("WebSocket connected");
       setWsStatus("live");
       setReconnectAttempts(0);
     };
 
     ws.onclose = () => {
-      console.log("WebSocket disconnected");
       setWsStatus("disconnected");
       setReconnectAttempts(n => n + 1);
       reconnectTimer.current = setTimeout(connectWs, 3000);
@@ -283,9 +298,6 @@ export default function App() {
     ws.onmessage = (event) => {
       let msg;
       try { msg = JSON.parse(event.data); } catch { return; }
-
-      console.log("WS EVENT:", msg);
-
       if (msg.event !== "click") return;
       if (!shortUrl) return;
       const code = shortUrl.split("/").pop();
@@ -296,10 +308,7 @@ export default function App() {
 
       setLiveChart(prev => {
         const lastCount = prev.length ? prev[prev.length - 1].count : 0;
-        const point = {
-          time: new Date().toLocaleTimeString(),
-          count: lastCount + 1
-        };
+        const point = { time: new Date().toLocaleTimeString(), count: lastCount + 1 };
         const updated = [...prev, point];
         return updated.length > 30 ? updated.slice(-30) : updated;
       });
@@ -328,7 +337,7 @@ export default function App() {
     try {
       const res = await fetch(`${API}/api/shorten`, {
         method:"POST",
-        headers:{ "Content-Type":"application/json", ...getHeaders() },
+        headers: getHeaders(),
         body: JSON.stringify({ long_url:fixedUrl, alias:alias.trim()||null }),
       });
       const data = await res.json();
@@ -356,10 +365,9 @@ export default function App() {
     setALoading(true);
     try {
       const code = shortUrl.split("/").pop();
-      const res  = await fetch(`${API}/api/analytics/${code}`, { headers:getHeaders() });
+      const res = await fetch(`${API}/api/analytics/${code}`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
-        
         setStats({
           total: data.total ?? 0,
           unique: data.unique ?? 0,
@@ -372,17 +380,15 @@ export default function App() {
             time: new Date(c.timestamp).toLocaleTimeString()
           }))
         });
-
         setDevices(data.devices || {});
         setCountries(data.countries || {});
-
         setTotalClicks(prev => Math.max(prev, data.total ?? 0));
         setUniqueClients(data.unique ?? 0);
-      } else { 
-        showToast("Something went wrong. Please try again","error"); 
+      } else {
+        showToast("Failed to load analytics", "error");
       }
-    } catch { 
-      showToast("Something went wrong. Please try again","error"); 
+    } catch {
+      showToast("Something went wrong. Please try again","error");
     }
     setALoading(false);
   };
@@ -395,41 +401,41 @@ export default function App() {
     const code = shortUrlRef.current.split("/").pop();
     try {
       for (let i = 0; i < 10; i++) {
-        await fetch(`${API}/api/ping/${code}`);
+        await fetch(`${API}/api/ping/${code}`, { headers: getHeaders() });
         setTotalClicks(prev => prev + 1);
         await new Promise(res => setTimeout(res, 300));
       }
-
       await loadAnalytics();
-
       alert("Traffic simulation complete");
     } catch (err) {
       console.error("Simulation failed", err);
+      showToast("Simulation failed", "error");
     }
     setSimulating(false);
   };
 
   const copy = () => {
     navigator.clipboard.writeText(shortUrl);
-    setCopied(true); setTimeout(()=>setCopied(false),2000);
+    setCopied(true);
+    setTimeout(()=>setCopied(false),2000);
     showToast("Link copied to clipboard");
   };
 
   const ICONS = {
-    link:    "M6.5 9.5a4 4 0 005.657-5.657L10.5 2.19A4 4 0 004.843 7.847L6.5 9.5zm3 0a4 4 0 00-5.657 5.657l1.657 1.653A4 4 0 0011.157 8.153L9.5 9.5",
-    copy:    "M5 5h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1zM3 11V3h8",
-    check:   "M3 8l3.5 3.5 6.5-7",
-    clock:   "M8 4v4l2.5 2.5M8 2a6 6 0 100 12A6 6 0 008 2z",
-    user:    "M8 7a3 3 0 100-6 3 3 0 000 6zm-5 6a5 5 0 0110 0",
-    chart:   "M2 12l4-4 3 2 5-6",
-    arrow:   "M2 8h12M10 4l4 4-4 4",
-    ext:     "M11 2h3v3M14 2L8 8M6 3H3v10h10V10",
-    key:     "M11 5a2 2 0 11-4 0 2 2 0 014 0zM3 13l3.5-3.5M8.5 9.5L7 11l1 1M5 12l1 1",
+    link: "M6.5 9.5a4 4 0 005.657-5.657L10.5 2.19A4 4 0 004.843 7.847L6.5 9.5zm3 0a4 4 0 00-5.657 5.657l1.657 1.653A4 4 0 0011.157 8.153L9.5 9.5",
+    copy: "M5 5h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1zM3 11V3h8",
+    check: "M3 8l3.5 3.5 6.5-7",
+    clock: "M8 4v4l2.5 2.5M8 2a6 6 0 100 12A6 6 0 008 2z",
+    user: "M8 7a3 3 0 100-6 3 3 0 000 6zm-5 6a5 5 0 0110 0",
+    chart: "M2 12l4-4 3 2 5-6",
+    arrow: "M2 8h12M10 4l4 4-4 4",
+    ext: "M11 2h3v3M14 2L8 8M6 3H3v10h10V10",
+    key: "M11 5a2 2 0 11-4 0 2 2 0 014 0zM3 13l3.5-3.5M8.5 9.5L7 11l1 1M5 12l1 1",
     refresh: "M2 8a6 6 0 0110.93-3M14 8a6 6 0 01-10.93 3M14 5v3h-3M2 11v-3h3",
-    zap:     "M9 2L4 9h4l-1 5 7-7H10l1-5z",
-    at:      "M8 10a2 2 0 100-4 2 2 0 000 4zm4-2a4 4 0 11-8 0 4 4 0 018 0zm2 0c0 1.1-.3 2-.8 2.7-.5.6-1.2.9-2 .5-.8-.4-.8-1.2-.7-2.2",
-    globe:   "M8 2a6 6 0 100 12A6 6 0 008 2zM2 8h12M8 2c-1.5 2-2.5 3.8-2.5 6s1 4 2.5 6M8 2c1.5 2 2.5 3.8 2.5 6s-1 4-2.5 6",
-    mobile:  "M5 2h6a1 1 0 011 1v10a1 1 0 01-1 1H5a1 1 0 01-1-1V3a1 1 0 011-1zm3 10h.01",
+    zap: "M9 2L4 9h4l-1 5 7-7H10l1-5z",
+    at: "M8 10a2 2 0 100-4 2 2 0 000 4zm4-2a4 4 0 11-8 0 4 4 0 018 0zm2 0c0 1.1-.3 2-.8 2.7-.5.6-1.2.9-2 .5-.8-.4-.8-1.2-.7-2.2",
+    globe: "M8 2a6 6 0 100 12A6 6 0 008 2zM2 8h12M8 2c-1.5 2-2.5 3.8-2.5 6s1 4 2.5 6M8 2c1.5 2 2.5 3.8 2.5 6s-1 4-2.5 6",
+    mobile: "M5 2h6a1 1 0 011 1v10a1 1 0 01-1 1H5a1 1 0 01-1-1V3a1 1 0 011-1zm3 10h.01",
     desktop: "M2 3h12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V4a1 1 0 011-1zm4 9h4m-2 0v1",
     download:"M8 2v8m-3-3l3 3 3-3M3 13h10",
   };
@@ -440,21 +446,18 @@ export default function App() {
     : `Disconnected · retry ${reconnectAttempts}`;
 
   const apiKeyDisplay = apiKey ? `${apiKey.slice(0,8)}••••••••${apiKey.slice(-4)}` : "Generating…";
-  const usagePct    = apiStats ? Math.min((apiStats.current_window/apiStats.limit)*100,100) : 0;
+  const usagePct = apiStats ? Math.min((apiStats.current_window/apiStats.limit)*100,100) : 0;
   const isThrottled = apiStats!=null && apiStats.status==="throttled";
-  const barColor    = isThrottled?"#f87171":usagePct>80?"linear-gradient(90deg,#f97316,#f87171)":"linear-gradient(90deg,#6366f1,#34d399)";
+  const barColor = isThrottled?"#f87171":usagePct>80?"linear-gradient(90deg,#f97316,#f87171)":"linear-gradient(90deg,#6366f1,#34d399)";
 
-  const deviceList = Object.entries(devices).map(([device, count]) => ({ device, count: Number(count) || 0 }));
-  const countryList = Object.entries(countries).map(([country, count]) => ({ country, count: Number(count) || 0 })).sort((a, b) => b.count - a.count);
+  const deviceList = Object.entries(devices || {}).map(([device, count]) => ({ device, count: Number(count) || 0 }));
+  const countryList = Object.entries(countries || {}).map(([country, count]) => ({ country, count: Number(count) || 0 })).sort((a, b) => b.count - a.count);
 
-  const mobileCount  = deviceList.find(d => d.device === "mobile")?.count || 0;
+  const mobileCount = deviceList.find(d => d.device === "mobile")?.count || 0;
   const desktopCount = deviceList.find(d => d.device === "desktop")?.count || 0;
-  const totalDevice  = mobileCount + desktopCount || 1;
-  const mobilePct    = Math.round((mobileCount / totalDevice) * 100);
-  const desktopPct   = Math.round((desktopCount / totalDevice) * 100);
-
-  const peakHour     = stats?.hourly?.length
-    ? stats.hourly.reduce((a,b)=>b.clicks>a.clicks?b:a,stats.hourly[0]) : null;
+  const totalDevice = mobileCount + desktopCount || 1;
+  const mobilePct = Math.round((mobileCount / totalDevice) * 100);
+  const desktopPct = Math.round((desktopCount / totalDevice) * 100);
 
   return (
     <>
@@ -463,14 +466,14 @@ export default function App() {
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
         body{background:#07070f;}
         input::placeholder{color:#1e293b;}
-        @keyframes spin      {to{transform:rotate(360deg);}}
-        @keyframes ping      {0%{transform:scale(1);opacity:.7;}100%{transform:scale(2.4);opacity:0;}}
-        @keyframes slideUp   {from{opacity:0;transform:translateY(8px) translateX(-50%);}to{opacity:1;transform:translateY(0) translateX(-50%);}}
-        @keyframes fadeIn    {from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
-        @keyframes flashPop  {0%,100%{transform:scale(1);}40%{transform:scale(1.1);}}
+        @keyframes spin {to{transform:rotate(360deg);}}
+        @keyframes ping {0%{transform:scale(1);opacity:.7;}100%{transform:scale(2.4);opacity:0;}}
+        @keyframes slideUp {from{opacity:0;transform:translateY(8px) translateX(-50%);}to{opacity:1;transform:translateY(0) translateX(-50%);}}
+        @keyframes fadeIn {from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+        @keyframes flashPop {0%,100%{transform:scale(1);}40%{transform:scale(1.1);}}
         @keyframes spikeAnim {0%{transform:scale(1);}40%{transform:scale(1.12);}100%{transform:scale(1);}}
-        @keyframes simPulse  {0%,100%{opacity:1;}50%{opacity:.35;}}
-        .key-btn:hover    { background:rgba(255,255,255,.08) !important; border-color:rgba(255,255,255,.15) !important; }
+        @keyframes simPulse {0%,100%{opacity:1;}50%{opacity:.35;}}
+        .key-btn:hover { background:rgba(255,255,255,.08) !important; border-color:rgba(255,255,255,.15) !important; }
         .copy-key-btn:hover { color:#a5b4fc !important; }
         .action-btn:hover { background:rgba(255,255,255,.08) !important; border-color:rgba(255,255,255,.14) !important; color:#e2e8f0 !important; }
         .shorten-btn:hover { opacity:.88 !important; }
@@ -576,7 +579,7 @@ export default function App() {
           <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", borderRadius:15, padding:18 }}>
             <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
               <Field iconD={ICONS.link} placeholder="Paste your long URL here…" value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&shorten()} />
-              <button onClick={shorten} disabled={loading} className="shorten-btn" style={{ height:44, padding:"0 20px", flexShrink:0, background:"linear-gradient(135deg,#6366f1,#06b6d4)", border:"none", borderRadius:11, color:"#fff", fontSize:13.5, fontWeight:500, cursor:"pointer", display:"flex", alignItems:"center", gap:7, opacity:loading?.7:1, transition:"opacity .2s, transform .15s", whiteSpace:"nowrap" }}>
+              <button onClick={shorten} disabled={loading} className="shorten-btn" style={{ height:44, padding:"0 20px", flexShrink:0, background:"linear-gradient(135deg,#6366f1,#06b6d4)", border:"none", borderRadius:11, color:"#fff", fontSize:13.5, fontWeight:500, cursor:"pointer", display:"flex", alignItems:"center", gap:7, opacity:loading?0.7:1, transition:"opacity .2s, transform .15s", whiteSpace:"nowrap" }}>
                 {loading ? <Spinner /> : <><Icon d={ICONS.arrow} size={14} color="white" />Generate Short Link</>}
               </button>
             </div>
@@ -601,13 +604,8 @@ export default function App() {
                     {aLoading ? <Spinner size={11}/> : <Icon d={ICONS.chart} size={13} color="#64748b"/>}
                     {aLoading?"Loading…":"View Analytics"}
                   </button>
-                  <button 
-                    onClick={handleSimulateTraffic}
-                    disabled={simulating}
-                    className="action-btn" 
-                    style={{ ...iconBtn, width:"auto", padding:"0 12px", gap:6, color:"#64748b", fontSize:12.5, fontWeight:500, transition:"all .2s" }}
-                  >
-                    <Icon d={ICONS.zap} size={13} color={simulating ? "#f97316" : "#64748b"} />
+                  <button onClick={handleSimulateTraffic} disabled={simulating} className="action-btn" style={{ ...iconBtn, width:"auto", padding:"0 12px", gap:6, color:"#64748b", fontSize:12.5, fontWeight:500, transition:"all .2s" }}>
+                    <Icon d={ICONS.zap} size={13} color={simulating?"#f97316":"#64748b"} />
                     {simulating ? "Simulating..." : "Simulate Traffic"}
                   </button>
                   <button onClick={downloadCSV} className="action-btn" style={{ ...iconBtn, width:"auto", padding:"0 12px", gap:6, color:"#64748b", fontSize:12.5, fontWeight:500, transition:"all .2s" }}>
@@ -618,22 +616,19 @@ export default function App() {
             )}
           </div>
 
-          {shortUrl ? (
+          {shortUrl && (
             <div style={{ marginTop:14, animation:"fadeIn .35s ease", display:"flex", flexDirection:"column", gap:12 }}>
-
               <div style={{ display:"flex", gap:10 }}>
-                <StatCard label="Total Requests"          value={totalClicks}   accent="#818cf8" flash={flash} />
-                <StatCard label="Unique Clients"          value={uniqueClients} accent="#34d399" />
-                <StatCard label="Live Events (WebSocket)" value={liveEvents}    accent="#f97316" sub="this session" flash={flash} />
+                <StatCard label="Total Requests" value={totalClicks} accent="#818cf8" flash={flash} />
+                <StatCard label="Unique Clients" value={uniqueClients} accent="#34d399" />
+                <StatCard label="Live Events (WebSocket)" value={liveEvents} accent="#f97316" sub="this session" flash={flash} />
               </div>
 
               {liveChart.length > 0 && (
                 <div style={cardWrap}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
                     <SectionLabel>Live Click Stream</SectionLabel>
-                    <span style={{ fontSize:11, color:"#4ade80", background:"rgba(74,222,128,.08)", border:"1px solid rgba(74,222,128,.15)", borderRadius:20, padding:"2px 9px" }}>
-                      WebSocket · live
-                    </span>
+                    <span style={{ fontSize:11, color:"#4ade80", background:"rgba(74,222,128,.08)", border:"1px solid rgba(74,222,128,.15)", borderRadius:20, padding:"2px 9px" }}>WebSocket · live</span>
                   </div>
                   <ResponsiveContainer width="100%" height={160}>
                     <LineChart data={liveChart} margin={{ top:4, right:4, left:-24, bottom:0 }}>
@@ -642,106 +637,104 @@ export default function App() {
                       <YAxis tick={{ fill:"#334155", fontSize:10 }} axisLine={false} tickLine={false} allowDecimals={false} />
                       <Tooltip content={<ChartTooltip />} />
                       <Line type="monotone" dataKey="count" stroke="#4ade80" strokeWidth={2} dot={false}
-                        activeDot={{ r:4, fill:"#4ade80", stroke:"#07070f", strokeWidth:2 }}
-                        isAnimationActive={false}
-                      />
+                        activeDot={{ r:4, fill:"#4ade80", stroke:"#07070f", strokeWidth:2 }} isAnimationActive={false} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
               )}
 
-              {stats && (<>
-                <div style={{ display:"flex", gap:12 }}>
-                  <div style={{ ...cardWrap, flex:1 }}>
-                    <SectionLabel>Device Breakdown</SectionLabel>
-                    <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                      {deviceList.length > 0 ? deviceList.map(({ device, count }) => {
-                        const pct = Math.round((count / (mobileCount + desktopCount || 1)) * 100);
-                        const icon = device === "mobile" ? ICONS.mobile : ICONS.desktop;
-                        const color = device === "mobile" ? "#34d399" : "#818cf8";
-                        return (
-                          <div key={device}>
-                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:5 }}>
-                              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                                <Icon d={icon} size={12} color={color}/><span style={{ fontSize:12, color:"#475569" }}>{device}</span>
+              {stats && (
+                <>
+                  <div style={{ display:"flex", gap:12 }}>
+                    <div style={{ ...cardWrap, flex:1 }}>
+                      <SectionLabel>Device Breakdown</SectionLabel>
+                      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                        {deviceList.length > 0 ? deviceList.map(({ device, count }) => {
+                          const pct = Math.round((count / totalDevice) * 100);
+                          const icon = device === "mobile" ? ICONS.mobile : ICONS.desktop;
+                          const color = device === "mobile" ? "#34d399" : "#818cf8";
+                          return (
+                            <div key={device}>
+                              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:5 }}>
+                                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                                  <Icon d={icon} size={12} color={color}/><span style={{ fontSize:12, color:"#475569" }}>{device}</span>
+                                </div>
+                                <span style={{ fontSize:12, color, fontWeight:600 }}>{count} <span style={{ color:"#334155", fontWeight:400 }}>({pct}%)</span></span>
                               </div>
-                              <span style={{ fontSize:12, color, fontWeight:600 }}>{count} <span style={{ color:"#334155", fontWeight:400 }}>({pct}%)</span></span>
-                            </div>
-                            <div style={{ width:"100%", height:4, background:"rgba(255,255,255,.05)", borderRadius:10, overflow:"hidden" }}>
-                              <div style={{ width:`${pct}%`, height:"100%", background:color, borderRadius:10, transition:"width .5s ease" }}/>
-                            </div>
-                          </div>
-                        );
-                      }) : (
-                        <p style={{ fontSize:12, color:"#475569" }}>No device data yet</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {countryList.length > 0 && (
-                  <div style={{ ...cardWrap, flex:1 }}>
-                    <SectionLabel>Top Countries</SectionLabel>
-                    <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                      {countryList.slice(0, 5).map((c, i) => {
-                        const maxCount = countryList[0].count;
-                        const pct = Math.round((c.count / maxCount) * 100);
-                        const colors = ["#818cf8","#34d399","#f97316","#f87171","#fbbf24"];
-                        return (
-                          <div key={i}>
-                            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
-                              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                                <Icon d={ICONS.globe} size={11} color={colors[i % colors.length]}/><span style={{ fontSize:12, color:"#475569" }}>{c.country}</span>
+                              <div style={{ width:"100%", height:4, background:"rgba(255,255,255,.05)", borderRadius:10, overflow:"hidden" }}>
+                                <div style={{ width:`${pct}%`, height:"100%", background:color, borderRadius:10, transition:"width .5s ease" }} />
                               </div>
-                              <span style={{ fontSize:12, color:colors[i % colors.length], fontWeight:600 }}>{c.count}</span>
                             </div>
-                            <div style={{ width:"100%", height:3, background:"rgba(255,255,255,.05)", borderRadius:10, overflow:"hidden" }}>
-                              <div style={{ width:`${pct}%`, height:"100%", background:colors[i % colors.length], borderRadius:10, transition:"width .5s ease" }}/>
-                            </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        }) : <p style={{ fontSize:12, color:"#475569" }}>No device data yet</p>}
+                      </div>
                     </div>
-                  </div>
-                  )}
-                </div>
 
-                {stats.recent?.length > 0 && (
-                <div style={cardWrap}>
-                  <SectionLabel>Recent Access Logs</SectionLabel>
-                  <div style={{ display:"flex", flexDirection:"column" }}>
-                    {stats.recent.map((r,i) => (
-                      <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:i<stats.recent.length-1?"1px solid rgba(255,255,255,.04)":"none" }}>
-                        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                          <div style={{ width:32, height:32, borderRadius:"50%", background:"rgba(99,102,241,.12)", border:"1px solid rgba(99,102,241,.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                            <Icon d={ICONS.user} size={13} color="#818cf8"/>
-                          </div>
-                          <div>
-                            <p style={{ fontSize:13, color:"#e2e8f0", fontWeight:500, fontFamily:"'Courier New',monospace" }}>{r.ip}</p>
-                            <div style={{ display:"flex", gap:8, marginTop:2 }}>
-                              {r.device  && <span style={{ fontSize:10, color:"#475569" }}>{r.device}</span>}
-                              {r.country && <span style={{ fontSize:10, color:"#475569" }}>· {r.country}</span>}
-                            </div>
-                          </div>
-                        </div>
-                        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                          <Icon d={ICONS.clock} size={12} color="#334155"/>
-                          <span style={{ fontSize:12, color:"#475569" }}>{r.time}</span>
+                    {countryList.length > 0 && (
+                      <div style={{ ...cardWrap, flex:1 }}>
+                        <SectionLabel>Top Countries</SectionLabel>
+                        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                          {countryList.slice(0,5).map((c,i) => {
+                            const maxCount = countryList[0].count;
+                            const pct = Math.round((c.count / maxCount) * 100);
+                            const colors = ["#818cf8","#34d399","#f97316","#f87171","#fbbf24"];
+                            return (
+                              <div key={i}>
+                                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
+                                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                                    <Icon d={ICONS.globe} size={11} color={colors[i%colors.length]} />
+                                    <span style={{ fontSize:12, color:"#475569" }}>{c.country}</span>
+                                  </div>
+                                  <span style={{ fontSize:12, color:colors[i%colors.length], fontWeight:600 }}>{c.count}</span>
+                                </div>
+                                <div style={{ width:"100%", height:3, background:"rgba(255,255,255,.05)", borderRadius:10, overflow:"hidden" }}>
+                                  <div style={{ width:`${pct}%`, height:"100%", background:colors[i%colors.length], borderRadius:10, transition:"width .5s ease" }} />
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                    ))}
+                    )}
                   </div>
-                </div>
-                )}
-              </>)}
+
+                  {stats.recent?.length > 0 && (
+                    <div style={cardWrap}>
+                      <SectionLabel>Recent Access Logs</SectionLabel>
+                      <div style={{ display:"flex", flexDirection:"column" }}>
+                        {stats.recent.map((r,i) => (
+                          <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:i<stats.recent.length-1?"1px solid rgba(255,255,255,.04)":"none" }}>
+                            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                              <div style={{ width:32, height:32, borderRadius:"50%", background:"rgba(99,102,241,.12)", border:"1px solid rgba(99,102,241,.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                                <Icon d={ICONS.user} size={13} color="#818cf8"/>
+                              </div>
+                              <div>
+                                <p style={{ fontSize:13, color:"#e2e8f0", fontWeight:500, fontFamily:"'Courier New',monospace" }}>{r.ip}</p>
+                                <div style={{ display:"flex", gap:8, marginTop:2 }}>
+                                  {r.device && <span style={{ fontSize:10, color:"#475569" }}>{r.device}</span>}
+                                  {r.country && <span style={{ fontSize:10, color:"#475569" }}>· {r.country}</span>}
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                              <Icon d={ICONS.clock} size={12} color="#334155"/>
+                              <span style={{ fontSize:12, color:"#475569" }}>{r.time}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
 
               {!stats && (
                 <div style={{ background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.05)", borderRadius:14, padding:"22px 16px", textAlign:"center" }}>
                   <p style={{ fontSize:13, color:"#2d3748" }}>No analytics yet. Generate traffic to see data.</p>
                 </div>
               )}
-
             </div>
-          ) : null}
+          )}
 
           <div style={{ marginTop:36, textAlign:"center" }}>
             <p style={{ fontSize:12, color:"#1e293b", marginBottom:5 }}>Real-time event streaming powered by WebSockets and Redis</p>
