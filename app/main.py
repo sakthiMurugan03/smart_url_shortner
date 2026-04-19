@@ -9,9 +9,15 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
+# ✅ FIXED CORS
+origins = [
+    "http://localhost:5173",                # local frontend
+    "https://smart-url-shortner.vercel.app" # deployed frontend
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,   # ❗ NOT "*"
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
