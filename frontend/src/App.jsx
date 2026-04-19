@@ -1,14 +1,21 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, Area, AreaChart, BarChart, Bar, Cell,
+  LineChart, Line,
 } from "recharts";
 
 /* ── Environment-driven API base (set in frontend/.env) ── */
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+/* ── Fixed WebSocket base (Render deployment) ── */
+const WS_URL = "wss://smart-url-shortner.onrender.com/ws";
+
 /* ── Auth header helper ── */
 const getHeaders = () => ({ "x-api-key": localStorage.getItem("apiKey") || "" });
+
+/* ── Timestamp label for live chart ── */
+const nowLabel = () => new Date().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit", second:"2-digit" });
 
 /* ─────────────────────── SHARED COMPONENTS ─────────────────────── */
 
@@ -152,10 +159,13 @@ export default function App() {
   const [shortUrl, setShortUrl]     = useState("");
   const [stats, setStats]           = useState(null);
   const [wsStatus, setWsStatus]     = useState("connecting");
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const [loading, setLoading]       = useState(false);
   const [aLoading, setALoading]     = useState(false);
   const [copied, setCopied]         = useState(false);
   const [liveHits, setLiveHits]     = useState(0);
+  const [totalClicks, setTotalClicks] = useState(0);
+  const [liveChart, setLiveChart]   = useState([]); // { time, clicks }[]
   const [flash, setFlash]           = useState(false);
   const [toast, setToast]           = useState({ msg:"", type:"ok" });
   const [apiKey, setApiKey]         = useState(localStorage.getItem("apiKey") || "");
@@ -163,10 +173,15 @@ export default function App() {
   const [secondsLeft, setSecondsLeft] = useState(60);
   const [spike, setSpike]           = useState(false);
   const [simulating, setSimulating] = useState(false);
-  const shortUrlRef                 = useRef(shortUrl);
-  shortUrlRef.current = shortUrl;
 
-  const showToast = (msg, type="ok") => { setToast({msg,type}); setTimeout(()=>setToast({msg:"",type:"ok"}),3500); };
+  /* ── Refs so WS callbacks always see latest values without re-subscribing ── */
+  const shortUrlRef      = useRef(shortUrl);
+  const wsRef            = useRef(null);
+  const reconnectTimer   = useRef(null);
+  const fallbackTimer    = useRef(null);
+  shortUrlRef.current    = shortUrl;
+
+  const showToast    = (msg, type="ok") => { setToast({msg,type}); setTimeout(()=>setToast({msg:"",type:"ok"}),3500); };
   const triggerFlash = () => { setFlash(true); setTimeout(()=>setFlash(false),700); };
 
   /* ── Auto-generate API key on first load ── */
@@ -225,34 +240,102 @@ export default function App() {
     return () => { clearInterval(usageInterval); clearInterval(countInterval); };
   }, [apiKey]);
 
-  /* ── WebSocket — dynamic URL derived from API env var, with auto-reconnect ── */
-  useEffect(() => {
-    let ws;
-    const connect = () => {
-      const WS = API.startsWith("https") ? API.replace("https", "wss") : API.replace("http", "ws");
-      ws = new WebSocket(`${WS}/ws`);
-      ws.onopen    = () => setWsStatus("live");
-      ws.onclose   = () => {
-        setWsStatus("disconnected");
-        setTimeout(connect, 2000);
-      };
-      ws.onerror   = () => ws.close();
-      ws.onmessage = () => {
-        if (!shortUrlRef.current) return;
-        setLiveHits(n => n + 1);
-        triggerFlash();
-        (async () => {
-          try {
-            const code = shortUrlRef.current.split("/").pop();
-            const res  = await fetch(`${API}/api/analytics/${code}`, { headers: getHeaders() });
-            if (res.ok) setStats(await res.json());
-          } catch {}
-        })();
-      };
-    };
-    connect();
-    return () => ws?.close();
+  /* ── Fallback analytics sync: every 10 s while a link is active ── */
+  const syncFromBackend = useCallback(async () => {
+    const code = shortUrlRef.current?.split("/").pop();
+    if (!code) return;
+    try {
+      const res = await fetch(`${API}/api/analytics/${code}`, { headers: getHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      // Merge backend truth into stats without overwriting fields WS updates live
+      setStats(prev => ({
+        ...(prev || {}),
+        total:     data.total     ?? prev?.total     ?? 0,
+        unique:    data.unique    ?? prev?.unique     ?? 0,
+        daily:     data.daily     ?? prev?.daily      ?? [],
+        hourly:    data.hourly    ?? prev?.hourly     ?? [],
+        devices:   data.devices   ?? prev?.devices    ?? [],
+        countries: data.countries ?? prev?.countries  ?? [],
+        recent:    data.recent    ?? prev?.recent     ?? [],
+      }));
+      // Only advance totalClicks if backend is ahead (catches missed WS events)
+      setTotalClicks(prev => Math.max(prev, data.total ?? 0));
+    } catch {}
   }, []);
+
+  /* ── Start / stop fallback poll when shortUrl changes ── */
+  useEffect(() => {
+    if (fallbackTimer.current) clearInterval(fallbackTimer.current);
+    if (!shortUrl) return;
+    fallbackTimer.current = setInterval(syncFromBackend, 10000);
+    return () => clearInterval(fallbackTimer.current);
+  }, [shortUrl, syncFromBackend]);
+
+  /* ── WebSocket — fixed Render URL, auto-reconnect with attempt counter ── */
+  const connectWs = useCallback(() => {
+    // Clean up any existing socket cleanly (suppress its onclose reconnect)
+    if (wsRef.current) {
+      wsRef.current.onclose = null;
+      wsRef.current.close();
+    }
+
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setWsStatus("live");
+      setReconnectAttempts(0);
+    };
+
+    ws.onclose = () => {
+      setWsStatus("disconnected");
+      setReconnectAttempts(n => n + 1);
+      reconnectTimer.current = setTimeout(connectWs, 2000);
+    };
+
+    ws.onerror = () => ws.close(); // triggers onclose → reconnect
+
+    ws.onmessage = (event) => {
+      const code = shortUrlRef.current?.split("/").pop();
+      if (!code) return;
+
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+
+      // Only handle click events for the currently active short link
+      if (msg.event !== "click" || msg.short_code !== code) return;
+
+      setLiveHits(n => n + 1);
+      setTotalClicks(n => {
+        const next = n + 1;
+        // Append timestamped point to live chart; keep last 30 points
+        setLiveChart(prev => {
+          const updated = [...prev, { time: nowLabel(), clicks: next }];
+          return updated.length > 30 ? updated.slice(updated.length - 30) : updated;
+        });
+        return next;
+      });
+      // Mirror live total → stats.total and stats.unique
+      setStats(prev => prev ? {
+        ...prev,
+        total:  (prev.total  ?? 0) + 1,
+        unique: (prev.unique ?? 0) + 1,
+      } : null);
+      triggerFlash();
+    };
+  }, []);
+
+  useEffect(() => {
+    connectWs();
+    return () => {
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      if (wsRef.current) {
+        wsRef.current.onclose = null; // suppress reconnect on intentional unmount
+        wsRef.current.close();
+      }
+    };
+  }, [connectWs]);
 
   /* ── Shorten ── */
   const shorten = async () => {
@@ -273,8 +356,12 @@ export default function App() {
         if (res.status === 409) { setAliasError("Alias already taken"); showToast("Alias already taken", "error"); setLoading(false); return; }
         throw new Error(data.detail || "Error");
       }
+      // Reset all live state for the new link
       setShortUrl(data.short_url);
-      setStats(null); setLiveHits(0);
+      setStats(null);
+      setLiveHits(0);
+      setTotalClicks(0);
+      setLiveChart([]);
       if (alias.trim()) setAliasHint("Custom alias applied");
       showToast("Short link generated successfully");
       setSpike(true); setTimeout(() => setSpike(false), 500);
@@ -285,7 +372,7 @@ export default function App() {
     setLoading(false);
   };
 
-  /* ── Load analytics ── */
+  /* ── Load analytics (manual refresh) ── */
   const loadAnalytics = async () => {
     setALoading(true);
     try {
@@ -302,6 +389,7 @@ export default function App() {
           countries: data.countries ?? [],
           recent:    data.recent    ?? [],
         });
+        setTotalClicks(prev => Math.max(prev, data.total ?? 0));
       } else {
         showToast("Something went wrong. Please try again", "error");
       }
@@ -317,7 +405,7 @@ export default function App() {
     window.open(`${API}/api/export/${code}`);
   };
 
-  /* ── Traffic simulator — sends 10 sequential pings to /api/ping/:code ── */
+  /* ── Traffic simulator — 10 pings to /api/ping/:code; WS updates UI ── */
   const simulateTraffic = async () => {
     if (!shortUrl) return showToast("Create a link first", "error");
     setSimulating(true);
@@ -363,7 +451,12 @@ export default function App() {
 
   /* ── Derived display values ── */
   const wsColor = { live:"#4ade80", connecting:"#fbbf24", disconnected:"#f87171" }[wsStatus];
-  const wsLabel = { live:"Live", connecting:"Connecting…", disconnected:"Disconnected" }[wsStatus];
+  const wsLabel = wsStatus === "live"
+    ? "WebSocket connected"
+    : wsStatus === "connecting"
+    ? "Connecting…"
+    : `Disconnected · retry ${reconnectAttempts}`;
+
   const apiKeyDisplay = apiKey ? `${apiKey.slice(0,8)}••••••••${apiKey.slice(-4)}` : "Generating…";
   const usagePct    = apiStats ? Math.min((apiStats.current_window / apiStats.limit) * 100, 100) : 0;
   const isThrottled = apiStats != null && apiStats.status === "throttled";
@@ -592,12 +685,38 @@ export default function App() {
           {stats ? (
             <div style={{ marginTop:14, animation:"fadeIn .35s ease", display:"flex", flexDirection:"column", gap:12 }}>
 
-              {/* Stat cards */}
+              {/* Stat cards — driven by live WebSocket state */}
               <div style={{ display:"flex", gap:10 }}>
-                <StatCard label="Total Requests"          value={stats.total}  accent="#818cf8" flash={flash} />
-                <StatCard label="Unique Clients"          value={stats.unique} accent="#34d399" />
-                <StatCard label="Live Events (WebSocket)" value={liveHits}     accent="#f97316" sub="this session" flash={flash} />
+                <StatCard label="Total Requests"          value={totalClicks} accent="#818cf8" flash={flash} />
+                <StatCard label="Unique Clients"          value={totalClicks} accent="#34d399" />
+                <StatCard label="Live Events (WebSocket)" value={liveHits}    accent="#f97316" sub="this session" flash={flash} />
               </div>
+
+              {/* Live WebSocket click-stream chart */}
+              {liveChart.length > 0 && (
+                <div style={cardWrap}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+                    <SectionLabel>Live Click Stream</SectionLabel>
+                    <span style={{ fontSize:11, color:"#4ade80", background:"rgba(74,222,128,.08)", border:"1px solid rgba(74,222,128,.15)", borderRadius:20, padding:"2px 9px" }}>
+                      WebSocket · live
+                    </span>
+                  </div>
+                  <ResponsiveContainer width="100%" height={160}>
+                    <LineChart data={liveChart} margin={{ top:4, right:4, left:-24, bottom:0 }}>
+                      <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
+                      <XAxis dataKey="time" tick={{ fill:"#334155", fontSize:10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                      <YAxis tick={{ fill:"#334155", fontSize:10 }} axisLine={false} tickLine={false} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Line
+                        type="monotone" dataKey="clicks"
+                        stroke="#4ade80" strokeWidth={2} dot={false}
+                        activeDot={{ r:4, fill:"#4ade80", stroke:"#07070f", strokeWidth:2 }}
+                        isAnimationActive={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
 
               {/* Daily trend */}
               {stats.daily?.length > 0 && (
