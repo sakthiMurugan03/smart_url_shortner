@@ -4,26 +4,45 @@ from .database import SessionLocal
 from .models import URL
 from .cache import redis_client
 
+
 def sync_clicks():
     while True:
         db: Session = SessionLocal()
 
-        keys = redis_client.keys("clicks:*")
+        try:
+            cursor = 0
 
-        for key in keys:
-            short_code = key.split(":")[1]
-            clicks = int(redis_client.get(key))
+            while True:
+                cursor, keys = redis_client.scan(cursor=cursor, match="clicks:*", count=100)
 
-            url = db.query(URL).filter(URL.short_code == short_code).first()
+                for key in keys:
+                    short_code = key.split(":")[1]
 
-            if url and clicks > 0:
-                url.click_count = (url.click_count or 0) + clicks
-                redis_client.set(key, 0)
+                    # 🔥 atomic read + reset
+                    clicks = int(redis_client.getset(key, 0) or 0)
 
-        db.commit()
-        db.close()
+                    if clicks == 0:
+                        continue
 
-        time.sleep(30)
+                    url = db.query(URL).filter(URL.short_code == short_code).first()
+
+                    if url:
+                        url.click_count = (url.click_count or 0) + clicks
+
+                if cursor == 0:
+                    break
+
+            db.commit()
+
+        except Exception as e:
+            print("Worker error:", e)
+
+        finally:
+            db.close()
+
+        time.sleep(10)  # reduced latency
+        
 
 if __name__ == "__main__":
+    print("Worker started...")
     sync_clicks()

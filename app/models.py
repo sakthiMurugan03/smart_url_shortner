@@ -18,3 +18,5 @@ class Click(Base):
     short_code = Column(String(20))
     timestamp = Column(DateTime, default=datetime.utcnow)
     ip_address = Column(String(50))
+    device = Column(String(20), nullable=True)
+    country = Column(String(100), nullable=True)
