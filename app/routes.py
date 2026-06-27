@@ -74,7 +74,7 @@ def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db
     if alias:
         existing = db.query(URL).filter(URL.short_code == alias).first()
         if existing:
-            raise HTTPException(status_code=409, detail="Alias taken")
+            raise HTTPException(status_code=409, detail="Alias already taken")
         short_code = alias
     else:
         while True:
