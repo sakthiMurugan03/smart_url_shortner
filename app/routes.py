@@ -1,9 +1,13 @@
+
+import qrcode
+from io import BytesIO
+from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
-from fastapi.responses import StreamingResponse
+
 import csv
 import io
 import uuid
@@ -87,7 +91,7 @@ def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db
     db.commit()
 
     return {
-    "short_url": f"https://smart-url-shortner.onrender.com/api/{short_code}"
+        "short_url": f"https://smart-url-shortner.vercel.app/{short_code}"
     }
 
 def create_click(short_code, request, db):
@@ -199,6 +203,27 @@ def get_analytics(short_code: str, request: Request, db: Session = Depends(get_d
             for c in clicks
         ]
     }
+
+@router.get("/qr/{short_code}")
+def generate_qr(short_code: str, db: Session = Depends(get_db)):
+
+    url = db.query(URL).filter(URL.short_code == short_code).first()
+
+    if not url:
+        raise HTTPException(status_code=404, detail="Short URL not found")
+
+    short_url = f"https://smart-url-shortner.vercel.app/{short_code}"
+
+    img = qrcode.make(short_url)
+
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="image/png"
+    )
 
 @router.get("/export/{short_code}")
 def export_csv(
