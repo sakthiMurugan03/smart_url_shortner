@@ -3,7 +3,7 @@ import {
   XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, AreaChart, Area,
 } from "recharts";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useSpring, useTransform, useMotionValue } from "framer-motion";
 import {
   Link2, Copy, Check, ExternalLink, RefreshCw, Key,
   Zap, BarChart2, Monitor, Smartphone, Clock,
@@ -113,30 +113,55 @@ const Badge = ({ children, color = T.primary, bg }) => (
 );
 
 /* ─── Card wrapper ─────────────────────────────── */
-const Card = ({ children, style = {}, glow = false }) => (
-  <div style={{
-    background: T.surface,
-    border: `1px solid ${T.border}`,
-    borderRadius: T.radius.lg,
-    padding: "20px 22px",
-    backdropFilter: "blur(18px)",
-    boxShadow: glow
-      ? `0 0 0 1px rgba(99,102,241,.14), 0 10px 44px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.05)`
-      : `0 6px 28px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.04)`,
-    position: "relative",
-    overflow: "hidden",
-    transition: "border-color .25s, box-shadow .25s",
-    ...style,
-  }}>
-    {/* Subtle scan-line texture — the signature element */}
-    <div style={{
-      position: "absolute", inset: 0, pointerEvents: "none",
-      backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,.008) 2px, rgba(255,255,255,.008) 4px)",
-      borderRadius: "inherit",
-    }} />
-    <div style={{ position: "relative", zIndex: 1 }}>{children}</div>
-  </div>
-);
+// elevation: "primary" (strongest, the URL generator + API key) | "medium" (analytics/chart) | "light" (logs/secondary)
+const Card = ({ children, style = {}, glow = false, elevation = "medium" }) => {
+  const tier = glow ? "primary" : elevation;
+  const shadows = {
+    primary: `0 0 0 1px rgba(99,102,241,.16), 0 14px 52px rgba(0,0,0,.45), 0 2px 8px rgba(99,102,241,.08), inset 0 1px 0 rgba(255,255,255,.06)`,
+    medium: `0 8px 32px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.045)`,
+    light: `0 4px 18px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.03)`,
+  };
+  const hoverShadows = {
+    primary: `0 0 0 1px rgba(99,102,241,.22), 0 20px 64px rgba(0,0,0,.5), 0 2px 12px rgba(99,102,241,.14), inset 0 1px 0 rgba(255,255,255,.07)`,
+    medium: `0 12px 40px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.05)`,
+    light: `0 6px 22px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.035)`,
+  };
+  const lifts = { primary: -3, medium: -2, light: -1 };
+  const borders = {
+    primary: T.borderStrong,
+    medium: T.border,
+    light: "rgba(255,255,255,.06)",
+  };
+  const bgs = {
+    primary: "rgba(255,255,255,.05)",
+    medium: T.surface,
+    light: "rgba(255,255,255,.03)",
+  };
+  return (
+    <motion.div
+      whileHover={{ y: lifts[tier], boxShadow: hoverShadows[tier] }}
+      transition={{ duration: 0.22, ease: "easeOut" }}
+      style={{
+        background: bgs[tier],
+        border: `1px solid ${borders[tier]}`,
+        borderRadius: T.radius.lg,
+        padding: "20px 22px",
+        backdropFilter: tier === "light" ? "blur(14px)" : "blur(18px)",
+        boxShadow: shadows[tier],
+        position: "relative",
+        overflow: "hidden",
+        ...style,
+      }}>
+      {/* Subtle scan-line texture — the signature element */}
+      <div style={{
+        position: "absolute", inset: 0, pointerEvents: "none",
+        backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,.008) 2px, rgba(255,255,255,.008) 4px)",
+        borderRadius: "inherit",
+      }} />
+      <div style={{ position: "relative", zIndex: 1 }}>{children}</div>
+    </motion.div>
+  );
+};
 
 /* ─── Section label ─────────────────────────────── */
 const Label = ({ children, style = {} }) => (
@@ -196,10 +221,28 @@ const Field = ({ icon: Icon_, placeholder, value, onChange, onKeyDown, error, hi
   );
 };
 
+/* ─── CountUp ─────────────────────────────── */
+// Purely cosmetic: tweens the displayed digits toward the latest numeric value via a spring.
+// The actual value/state passed in is untouched — this only animates its presentation.
+const CountUp = ({ value, style }) => {
+  const numeric = Number(value) || 0;
+  const mv = useMotionValue(numeric);
+  const spring = useSpring(mv, { stiffness: 140, damping: 18, mass: 0.6 });
+  const [display, setDisplay] = useState(numeric);
+
+  useEffect(() => { mv.set(numeric); }, [numeric, mv]);
+  useEffect(() => {
+    const unsub = spring.on("change", (v) => setDisplay(Math.round(v)));
+    return unsub;
+  }, [spring]);
+
+  return <span style={style}>{value === null || value === undefined ? "—" : display}</span>;
+};
+
 /* ─── MetricCard ─────────────────────────────── */
 const MetricCard = ({ icon: Icon_, label, value, sub, accent = T.primary, flash = false }) => (
   <motion.div
-    whileHover={{ y: -4, boxShadow: `0 20px 56px rgba(0,0,0,.5), 0 0 0 1px ${accent}2a` }}
+    whileHover={{ y: -4, boxShadow: `0 22px 60px rgba(0,0,0,.52), 0 0 0 1px ${accent}38` }}
     transition={{ duration: 0.2, ease: "easeOut" }}
     style={{
       flex: 1, minWidth: 0,
@@ -208,14 +251,15 @@ const MetricCard = ({ icon: Icon_, label, value, sub, accent = T.primary, flash 
       borderRadius: T.radius.lg,
       padding: "20px 22px",
       backdropFilter: "blur(18px)",
-      boxShadow: "0 6px 24px rgba(0,0,0,.28)",
+      boxShadow: "0 8px 28px rgba(0,0,0,.3)",
       position: "relative", overflow: "hidden",
       cursor: "default",
     }}
   >
+    {/* subtle gradient border accent, top edge */}
     <div style={{
-      position: "absolute", top: 0, left: 0, right: 0, height: 1,
-      background: `linear-gradient(90deg, transparent, ${accent}55, transparent)`,
+      position: "absolute", top: 0, left: 0, right: 0, height: 1.5,
+      background: `linear-gradient(90deg, transparent, ${accent}70, transparent)`,
     }} />
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
       <div style={{
@@ -223,6 +267,7 @@ const MetricCard = ({ icon: Icon_, label, value, sub, accent = T.primary, flash 
         background: `${accent}18`, border: `1px solid ${accent}2e`,
         display: "flex", alignItems: "center", justifyContent: "center",
         color: accent, flexShrink: 0,
+        boxShadow: `0 0 16px ${accent}28`,
       }}>
         <Icon_ size={17} strokeWidth={2} />
       </div>
@@ -233,19 +278,13 @@ const MetricCard = ({ icon: Icon_, label, value, sub, accent = T.primary, flash 
         }} />
       )}
     </div>
-    <motion.p
-      key={value}
-      initial={{ scale: flash ? 1.12 : 1, opacity: flash ? 0.6 : 1 }}
-      animate={{ scale: 1, opacity: 1 }}
-      transition={{ duration: 0.28, ease: "easeOut" }}
-      style={{
-        fontSize: 30, fontWeight: 800, color: T.text,
-        letterSpacing: "-1.2px", lineHeight: 1, marginBottom: 7,
-        fontVariantNumeric: "tabular-nums",
-      }}
-    >
-      {value ?? "—"}
-    </motion.p>
+    <p style={{
+      fontSize: 30, fontWeight: 800, color: T.text,
+      letterSpacing: "-1.2px", lineHeight: 1, marginBottom: 7,
+      fontVariantNumeric: "tabular-nums",
+    }}>
+      <CountUp value={value} />
+    </p>
     <p style={{ fontSize: 12.5, color: T.textMuted, fontWeight: 500 }}>{label}</p>
     {sub && <p style={{ fontSize: 11, color: accent, marginTop: 4, opacity: 0.8, fontWeight: 500 }}>{sub}</p>}
   </motion.div>
@@ -711,7 +750,7 @@ export default function App() {
       <div style={{
         minHeight: "100vh", position: "relative", zIndex: 1,
         display: "flex", flexDirection: "column", alignItems: "center",
-        padding: "0 16px 88px",
+        padding: "0 16px 80px",
       }}>
 
         {/* ── Nav ── */}
@@ -722,7 +761,7 @@ export default function App() {
           style={{
             width: "100%", maxWidth: 800,
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "16px 0", marginBottom: 28,
+            padding: "16px 0", marginBottom: 24,
             borderBottom: `1px solid ${T.border}`,
           }}
         >
@@ -734,7 +773,7 @@ export default function App() {
               display: "flex", alignItems: "center", justifyContent: "center",
               boxShadow: "0 4px 18px rgba(99,102,241,.5)",
             }}>
-              <Link2 size={14} color="white" strokeWidth={2.2} />
+              <Link2 size={14} color="white" strokeWidth={2} />
             </div>
             <div>
               <span style={{ fontSize: 14.5, fontWeight: 700, color: T.text, letterSpacing: "-.4px" }}>sniplink</span>
@@ -764,17 +803,17 @@ export default function App() {
           <motion.div
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.05 }}
-            style={{ textAlign: "center", marginBottom: 38 }}
+            style={{ textAlign: "center", marginBottom: 24 }}
           >
             {/* Feature chips */}
-            <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 7, marginBottom: 20 }}>
+            <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
               {[
-                { icon: <Activity size={10} />, label: "Realtime", color: T.green },
-                { icon: <BarChart2 size={10} />, label: "Analytics", color: T.primary },
-                { icon: <Zap size={10} />, label: "Redis", color: T.amber },
-                { icon: <Wifi size={10} />, label: "WebSocket", color: T.cyan },
-                { icon: <Shield size={10} />, label: "API Keys", color: T.purple },
-                { icon: <TrendingUp size={10} />, label: "Rate Limited", color: T.red },
+                { icon: <Activity size={12} strokeWidth={2} />, label: "Realtime", color: T.green },
+                { icon: <BarChart2 size={12} strokeWidth={2} />, label: "Analytics", color: T.primary },
+                { icon: <Zap size={12} strokeWidth={2} />, label: "Redis", color: T.amber },
+                { icon: <Wifi size={12} strokeWidth={2} />, label: "WebSocket", color: T.cyan },
+                { icon: <Shield size={12} strokeWidth={2} />, label: "API Keys", color: T.purple },
+                { icon: <TrendingUp size={12} strokeWidth={2} />, label: "Rate Limited", color: T.red },
               ].map(({ icon, label, color }) => (
                 <motion.span
                   key={label}
@@ -795,9 +834,9 @@ export default function App() {
             </div>
 
             <h1 style={{
-              fontSize: "clamp(32px, 5.4vw, 54px)", fontWeight: 800,
-              color: T.text, letterSpacing: "-2px", lineHeight: 1.05,
-              marginBottom: 14,
+              fontSize: "clamp(28px, 4.6vw, 46px)", fontWeight: 800,
+              color: T.text, letterSpacing: "-2px", lineHeight: 1.04,
+              marginBottom: 10,
             }}>
               Shorten. Track.{" "}
               <span style={{
@@ -808,7 +847,7 @@ export default function App() {
                 animation: "gradientShift 5s ease infinite",
               }}>Know Everything.</span>
             </h1>
-            <p style={{ fontSize: 16, color: T.textMuted, lineHeight: 1.7, maxWidth: 440, margin: "0 auto", fontWeight: 400 }}>
+            <p style={{ fontSize: 15, color: T.textMuted, lineHeight: 1.6, maxWidth: 420, margin: "0 auto", fontWeight: 400 }}>
               Real-time click analytics, API-key auth, Redis-powered redirects — built for developers.
             </p>
           </motion.div>
@@ -825,7 +864,7 @@ export default function App() {
                     background: `${T.primary}1c`, border: `1px solid ${T.primary}30`,
                     display: "flex", alignItems: "center", justifyContent: "center",
                   }}>
-                    <Key size={12.5} color={T.primaryBright} strokeWidth={2.2} />
+                    <Key size={13} color={T.primaryBright} strokeWidth={2} />
                   </div>
                   <span style={{ fontSize: 13, fontWeight: 650, color: "#D9DAE5" }}>API Access Key</span>
                   <InfoTip text="Required for all requests. Tracks usage and enforces rate limits." />
@@ -863,11 +902,11 @@ export default function App() {
                   <div style={{ display: "flex", gap: 6 }}>
                     {apiKey && (
                       <IconButton onClick={copyKey} title="Copy API key">
-                        {keyCopied ? <Check size={13} color={T.green} /> : <Copy size={13} />}
+                        {keyCopied ? <Check size={13} color={T.green} strokeWidth={2} /> : <Copy size={13} strokeWidth={2} />}
                       </IconButton>
                     )}
                     <GhostButton onClick={generateKey}>
-                      <RefreshCw size={11} />Regenerate
+                      <RefreshCw size={12} strokeWidth={2} />Regenerate
                     </GhostButton>
                   </div>
                 </div>
@@ -906,7 +945,7 @@ export default function App() {
                             fontSize: 12, color: "#FCA5A5", display: "flex", alignItems: "center", gap: 8,
                           }}
                         >
-                          <AlertTriangle size={12} />
+                          <AlertTriangle size={13} strokeWidth={2} />
                           Rate limit reached — new requests are queued until the window resets.
                         </motion.div>
                       )}
@@ -918,7 +957,7 @@ export default function App() {
 
             {/* ── Shortener Card ── */}
             <motion.div custom={1} variants={fadeUp} initial="hidden" animate="visible">
-              <Card>
+              <Card elevation="primary">
                 <Label>Shorten a URL</Label>
                 <div style={{ display: "flex", gap: 9, alignItems: "flex-start", marginBottom: 10 }}>
                   <Field
@@ -929,7 +968,7 @@ export default function App() {
                     onKeyDown={e => e.key === "Enter" && shorten()}
                   />
                   <PrimaryButton onClick={shorten} disabled={loading} loading={loading}>
-                    {!loading && <><ChevronRight size={15} />Generate</>}
+                    {!loading && <><ChevronRight size={15} strokeWidth={2} />Generate</>}
                   </PrimaryButton>
                 </div>
                 <Field
@@ -983,11 +1022,11 @@ export default function App() {
                         </a>
                         <div style={{ display: "flex", gap: 5 }}>
                           <IconButton onClick={copy} title="Copy link">
-                            {copied ? <Check size={13} color={T.green} /> : <Copy size={13} />}
+                            {copied ? <Check size={13} color={T.green} strokeWidth={2} /> : <Copy size={13} strokeWidth={2} />}
                           </IconButton>
                           <a href={shortUrl} target="_blank" rel="noreferrer">
                             <IconButton title="Open in new tab">
-                              <ExternalLink size={13} />
+                              <ExternalLink size={13} strokeWidth={2} />
                             </IconButton>
                           </a>
                         </div>
@@ -997,15 +1036,15 @@ export default function App() {
                       </p>
                       <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
                         <GhostButton onClick={loadAnalytics} disabled={aLoading}>
-                          {aLoading ? <Spinner size={11} color={T.textMuted} /> : <BarChart2 size={12} />}
+                          {aLoading ? <Spinner size={11} color={T.textMuted} /> : <BarChart2 size={13} strokeWidth={2} />}
                           {aLoading ? "Loading…" : "View Analytics"}
                         </GhostButton>
                         <GhostButton onClick={handleSimulateTraffic} disabled={simulating}>
-                          <Zap size={12} color={simulating ? T.amber : undefined} />
+                          <Zap size={13} strokeWidth={2} color={simulating ? T.amber : undefined} />
                           {simulating ? "Simulating…" : "Simulate Traffic"}
                         </GhostButton>
                         <GhostButton onClick={downloadCSV}>
-                          <Download size={12} />Export CSV
+                          <Download size={13} strokeWidth={2} />Export CSV
                         </GhostButton>
                       </div>
                     </motion.div>
@@ -1024,14 +1063,26 @@ export default function App() {
                   style={{ display: "flex", flexDirection: "column", gap: 14 }}
                 >
                   {/* Metric cards */}
-                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  <motion.div
+                    initial={{ opacity: 0, y: 14 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true, margin: "-40px" }}
+                    transition={{ duration: 0.4, ease: "easeOut" }}
+                    style={{ display: "flex", gap: 12, flexWrap: "wrap" }}
+                  >
                     <MetricCard icon={MousePointer} label="Total Requests" value={totalClicks} accent={T.primary} flash={flash} />
                     <MetricCard icon={Users} label="Unique Clients" value={uniqueClients} accent={T.green} />
                     <MetricCard icon={Activity} label="Live Events" value={liveEvents} accent={T.amber} sub="This session" flash={flash} />
-                  </div>
+                  </motion.div>
 
                   {/* Live chart */}
                   {liveChart.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 14 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true, margin: "-40px" }}
+                      transition={{ duration: 0.4, ease: "easeOut" }}
+                    >
                     <Card>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
                         <Label style={{ marginBottom: 0 }}>Live Click Stream</Label>
@@ -1072,11 +1123,18 @@ export default function App() {
                         </AreaChart>
                       </ResponsiveContainer>
                     </Card>
+                    </motion.div>
                   )}
 
                   {/* Device + Countries */}
                   {stats && (
-                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    <motion.div
+                      initial={{ opacity: 0, y: 14 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true, margin: "-40px" }}
+                      transition={{ duration: 0.4, ease: "easeOut" }}
+                      style={{ display: "flex", gap: 12, flexWrap: "wrap" }}
+                    >
                       {/* Device Breakdown */}
                       <Card style={{ flex: 1, minWidth: 240 }}>
                         <Label>Device Breakdown</Label>
@@ -1098,7 +1156,7 @@ export default function App() {
                                       background: `${color}16`, border: `1px solid ${color}28`,
                                       display: "flex", alignItems: "center", justifyContent: "center",
                                     }}>
-                                      <Icon_ size={13.5} color={color} strokeWidth={2} />
+                                      <Icon_ size={14} color={color} strokeWidth={2} />
                                     </div>
                                     <span style={{ fontSize: 13, color: "#A6A8BD", fontWeight: 550, textTransform: "capitalize" }}>{device}</span>
                                   </div>
@@ -1143,12 +1201,18 @@ export default function App() {
                           </div>
                         </Card>
                       )}
-                    </div>
+                    </motion.div>
                   )}
 
                   {/* Recent Access Logs */}
                   {stats?.recent?.length > 0 && (
-                    <Card>
+                    <motion.div
+                      initial={{ opacity: 0, y: 14 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true, margin: "-40px" }}
+                      transition={{ duration: 0.4, ease: "easeOut" }}
+                    >
+                    <Card elevation="light">
                       <Label>Recent Access Logs</Label>
                       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                         {stats.recent.map((r, i) => (
@@ -1195,19 +1259,20 @@ export default function App() {
                               </div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-                              <Clock size={11} color={T.textDim} />
+                              <Clock size={12} strokeWidth={2} color={T.textDim} />
                               <span style={{ fontSize: 11.5, color: T.textDim, fontVariantNumeric: "tabular-nums" }}>{r.time}</span>
                             </div>
                           </motion.div>
                         ))}
                       </div>
                     </Card>
+                    </motion.div>
                   )}
 
                   {/* Empty state */}
                   {!stats && (
-                    <Card style={{ textAlign: "center", padding: "44px 20px" }}>
-                      <BarChart2 size={26} color={T.textDim} style={{ margin: "0 auto 12px" }} />
+                    <Card elevation="light" style={{ textAlign: "center", padding: "44px 20px" }}>
+                      <BarChart2 size={26} strokeWidth={2} color={T.textDim} style={{ margin: "0 auto 12px" }} />
                       <p style={{ fontSize: 14, color: T.textDim, marginBottom: 5 }}>No analytics yet</p>
                       <p style={{ fontSize: 12.5, color: T.textDim, opacity: 0.6 }}>
                         Share your link or simulate traffic to see live data.

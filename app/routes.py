@@ -3,6 +3,9 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
+from fastapi.responses import StreamingResponse
+import csv
+import io
 import uuid
 import random
 import string
@@ -161,7 +164,18 @@ async def redirect(short_code: str, request: Request, db: Session = Depends(get_
 def get_analytics(short_code: str, request: Request, db: Session = Depends(get_db)):
     increment_usage(request)
 
-    clicks = db.query(Click).filter(Click.short_code == short_code).all()
+    clicks = (
+    db.query(Click)
+    .filter(Click.short_code == short_code)
+    .order_by(Click.timestamp.desc())
+    .all()
+)
+
+    if not clicks:
+        raise HTTPException(
+            status_code=404,
+            detail="No analytics found for this short code."
+        )
 
     device_count = {}
     country_count = {}
@@ -185,3 +199,55 @@ def get_analytics(short_code: str, request: Request, db: Session = Depends(get_d
             for c in clicks
         ]
     }
+
+@router.get("/export/{short_code}")
+def export_csv(
+    short_code: str,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    increment_usage(request)
+
+    clicks = (
+    db.query(Click)
+    .filter(Click.short_code == short_code)
+    .order_by(Click.timestamp.desc())
+    .all()
+)
+
+    if not clicks:
+        raise HTTPException(
+            status_code=404,
+            detail="No analytics found for this short code."
+        )
+
+    output = io.StringIO()
+
+    writer = csv.writer(output)
+
+    writer.writerow([
+        "Timestamp",
+        "IP Address",
+        "Device",
+        "Country"
+    ])
+
+    for click in clicks:
+        writer.writerow([
+            click.timestamp,
+            click.ip_address,
+            click.device,
+            click.country
+        ])
+
+    output.seek(0)
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{short_code}_analytics.csv"'
+    }
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers=headers,
+    )
