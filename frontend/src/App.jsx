@@ -165,9 +165,6 @@ export default function App() {
   const [spike, setSpike] = useState(false);
   const [simulating, setSimulating] = useState(false);
 
-  const [devices, setDevices] = useState({});
-  const [countries, setCountries] = useState({});
-
   const shortUrlRef = useRef(shortUrl);
   const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
@@ -378,8 +375,6 @@ export default function App() {
             time: new Date(c.timestamp).toLocaleTimeString()
           }))
         });
-        setDevices(data.devices || {});
-        setCountries(data.countries || {});
         setTotalClicks(prev => Math.max(prev, data.total ?? 0));
         setUniqueClients(data.unique ?? 0);
       } else {
@@ -448,8 +443,8 @@ export default function App() {
   const isThrottled = apiStats!=null && apiStats.status==="throttled";
   const barColor = isThrottled?"#f87171":usagePct>80?"linear-gradient(90deg,#f97316,#f87171)":"linear-gradient(90deg,#6366f1,#34d399)";
 
-  const deviceList = Object.entries(devices || {}).map(([device, count]) => ({ device, count: Number(count) || 0 }));
-  const countryList = Object.entries(countries || {}).map(([country, count]) => ({ country, count: Number(count) || 0 })).sort((a, b) => b.count - a.count);
+  const deviceList = Object.entries(stats?.devices || {}).map(([device, count]) => ({ device, count: Number(count) || 0 }));
+  const countryList = Object.entries(stats?.countries || {}).map(([country, count]) => ({ country, count: Number(count) || 0 })).sort((a, b) => b.count - a.count);
 
   const mobileCount = deviceList.find(d => d.device === "mobile")?.count || 0;
   const desktopCount = deviceList.find(d => d.device === "desktop")?.count || 0;
