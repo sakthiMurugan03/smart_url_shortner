@@ -1,9 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, Area, AreaChart, BarChart, Bar, Cell,
-  LineChart, Line,
+  CartesianGrid, AreaChart, Area,
 } from "recharts";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Link2, Copy, Check, ExternalLink, RefreshCw, Key,
+  Zap, BarChart2, Globe, Monitor, Smartphone, Clock,
+  Download, Activity, Shield, Wifi, ChevronRight,
+  TrendingUp, MousePointer, Users, AlertTriangle,
+} from "lucide-react";
 
 const BASE_URL = "https://smart-url-shortner.onrender.com";
 
@@ -12,24 +18,45 @@ const getHeaders = () => ({
   "x-api-key": localStorage.getItem("apiKey") || ""
 });
 
-const Icon = ({ d, size = 15, color = "#475569" }) => (
-  <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-    <path d={d} stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
+/* ─── Tokens ──────────────────────────────────────── */
+const T = {
+  bg: "#07070F",
+  surface: "rgba(255,255,255,.035)",
+  surfaceHover: "rgba(255,255,255,.055)",
+  border: "rgba(255,255,255,.07)",
+  borderFocus: "rgba(99,102,241,.55)",
+  primary: "#6366F1",
+  cyan: "#22D3EE",
+  green: "#22C55E",
+  amber: "#F59E0B",
+  red: "#EF4444",
+  purple: "#A78BFA",
+  text: "#F0F0FF",
+  textMuted: "#6B7280",
+  textDim: "#374151",
+  radius: { sm: 10, md: 14, lg: 18, xl: 22 },
+};
 
-const Spinner = ({ size = 13, color = "#fff" }) => (
+/* ─── Micro components ─────────────────────────────── */
+
+const Spinner = ({ size = 16, color = "#fff" }) => (
   <span style={{
-    display:"inline-block", width:size, height:size,
-    border:"2px solid rgba(255,255,255,.2)", borderTopColor:color,
-    borderRadius:"50%", animation:"spin .65s linear infinite", flexShrink:0,
+    display: "inline-block", width: size, height: size,
+    border: `1.5px solid rgba(255,255,255,.12)`, borderTopColor: color,
+    borderRadius: "50%", animation: "spin .65s linear infinite", flexShrink: 0,
   }} />
 );
 
-const LiveDot = ({ on }) => (
-  <span style={{ position:"relative", display:"inline-flex", width:8, height:8, flexShrink:0 }}>
-    {on && <span style={{ position:"absolute", inset:0, borderRadius:"50%", background:"rgba(74,222,128,.4)", animation:"ping 1.4s ease-out infinite" }} />}
-    <span style={{ position:"absolute", inset:0, borderRadius:"50%", background:on?"#4ade80":"#374151", transition:"background .4s" }} />
+const LivePulse = ({ on }) => (
+  <span style={{ position: "relative", display: "inline-flex", width: 7, height: 7, flexShrink: 0 }}>
+    {on && <span style={{
+      position: "absolute", inset: 0, borderRadius: "50%",
+      background: "rgba(34,197,94,.5)", animation: "ping 1.5s ease-out infinite"
+    }} />}
+    <span style={{
+      position: "absolute", inset: 0, borderRadius: "50%",
+      background: on ? T.green : T.textDim, transition: "background .4s"
+    }} />
   </span>
 );
 
@@ -37,108 +64,293 @@ const Toast = ({ msg, type }) => {
   if (!msg) return null;
   const ok = type !== "error";
   return (
-    <div style={{
-      position:"fixed", bottom:24, left:"50%", transform:"translateX(-50%)",
-      background:ok?"rgba(34,197,94,.1)":"rgba(239,68,68,.1)",
-      border:`1px solid ${ok?"rgba(34,197,94,.3)":"rgba(239,68,68,.3)"}`,
-      color:ok?"#4ade80":"#f87171",
-      borderRadius:10, padding:"9px 20px", fontSize:13.5, fontWeight:500,
-      zIndex:999, whiteSpace:"nowrap", animation:"slideUp .22s ease",
-    }}>{msg}</div>
+    <motion.div
+      initial={{ opacity: 0, y: 20, x: "-50%" }}
+      animate={{ opacity: 1, y: 0, x: "-50%" }}
+      exit={{ opacity: 0, y: 6, x: "-50%" }}
+      transition={{ type: "spring", damping: 20, stiffness: 300 }}
+      style={{
+        position: "fixed", bottom: 32, left: "50%",
+        background: ok ? "rgba(34,197,94,.09)" : "rgba(239,68,68,.09)",
+        border: `1px solid ${ok ? "rgba(34,197,94,.25)" : "rgba(239,68,68,.25)"}`,
+        color: ok ? T.green : T.red,
+        borderRadius: T.radius.md, padding: "10px 24px",
+        fontSize: 13, fontWeight: 500,
+        zIndex: 9999, whiteSpace: "nowrap", backdropFilter: "blur(20px)",
+        boxShadow: "0 16px 48px rgba(0,0,0,.5)",
+      }}
+    >{msg}</motion.div>
   );
 };
 
 const ChartTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background:"#0d0d18", border:"1px solid rgba(255,255,255,.08)", borderRadius:9, padding:"8px 14px", fontSize:12.5 }}>
-      <p style={{ margin:"0 0 3px", color:"#475569" }}>{label}</p>
-      <p style={{ margin:0, fontWeight:600, color:"#818cf8" }}>{payload[0].value} requests</p>
+    <div style={{
+      background: "rgba(10,10,20,.97)", border: `1px solid ${T.border}`,
+      borderRadius: T.radius.sm, padding: "9px 15px", fontSize: 12,
+      backdropFilter: "blur(12px)", boxShadow: "0 8px 32px rgba(0,0,0,.6)",
+    }}>
+      <p style={{ margin: "0 0 3px", color: T.textMuted, fontSize: 11 }}>{label}</p>
+      <p style={{ margin: 0, fontWeight: 700, color: T.primary }}>{payload[0].value} clicks</p>
     </div>
   );
 };
 
-const Field = ({ iconD, placeholder, value, onChange, onKeyDown, error, hint }) => {
-  const [focused, setFocused] = useState(false);
-  const borderColor = error ? "rgba(248,113,113,.6)" : focused ? "rgba(99,102,241,.4)" : "rgba(255,255,255,.07)";
-  const bg = error ? "rgba(248,113,113,.04)" : focused ? "rgba(99,102,241,.05)" : "rgba(255,255,255,.03)";
-  return (
-    <div style={{ flex:1 }}>
-      <div style={{ position:"relative" }}>
-        <span style={{ position:"absolute", left:13, top:"50%", transform:"translateY(-50%)", pointerEvents:"none", display:"flex" }}>
-          <Icon d={iconD} size={15} color={error ? "#f87171" : focused ? "#6366f1" : "#334155"} />
-        </span>
-        <input
-          placeholder={placeholder} value={value} onChange={onChange} onKeyDown={onKeyDown}
-          onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
-          style={{
-            width:"100%", height:44, fontFamily:"inherit",
-            background:bg, border:`1px solid ${borderColor}`,
-            borderRadius:11, padding:"0 14px 0 39px", color:"#f1f5f9", fontSize:14,
-            outline:"none", transition:"border-color .2s, background .2s",
-          }}
-        />
-      </div>
-      {error && <p style={{ fontSize:11, color:"#f87171", marginTop:5, paddingLeft:2 }}>{error}</p>}
-      {hint && !error && <p style={{ fontSize:11, color:"#4ade80", marginTop:5, paddingLeft:2 }}>{hint}</p>}
-    </div>
-  );
-};
+const Badge = ({ children, color = T.primary, bg }) => (
+  <span style={{
+    display: "inline-flex", alignItems: "center", gap: 5,
+    background: bg || `${color}14`,
+    border: `1px solid ${color}28`,
+    color, borderRadius: 20, padding: "2px 9px",
+    fontSize: 10.5, fontWeight: 600, letterSpacing: ".04em",
+    whiteSpace: "nowrap",
+  }}>{children}</span>
+);
 
-const StatCard = ({ label, value, sub, accent="#818cf8", flash=false }) => (
+/* ─── Card wrapper ─────────────────────────────── */
+const Card = ({ children, style = {}, glow = false }) => (
   <div style={{
-    flex:1, background:"rgba(255,255,255,.03)",
-    border:`1px solid ${flash?"rgba(99,102,241,.35)":"rgba(255,255,255,.06)"}`,
-    borderRadius:12, padding:"14px 15px", transition:"border-color .35s",
+    background: T.surface,
+    border: `1px solid ${T.border}`,
+    borderRadius: T.radius.lg,
+    padding: "22px 24px",
+    backdropFilter: "blur(16px)",
+    boxShadow: glow
+      ? `0 0 0 1px rgba(99,102,241,.12), 0 8px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04)`
+      : `0 4px 24px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04)`,
+    position: "relative",
+    overflow: "hidden",
+    ...style,
   }}>
-    <p style={{ fontSize:10.5, color:"#334155", textTransform:"uppercase", letterSpacing:".07em", marginBottom:7 }}>{label}</p>
-    <p style={{ fontSize:24, fontWeight:600, color:accent, letterSpacing:"-.5px", lineHeight:1, animation:flash?"flashPop .5s ease":"none" }}>
-      {value ?? "—"}
-    </p>
-    {sub && <p style={{ fontSize:11, color:"#334155", marginTop:5 }}>{sub}</p>}
+    {/* Subtle scan-line texture — the signature element */}
+    <div style={{
+      position: "absolute", inset: 0, pointerEvents: "none",
+      backgroundImage: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,.008) 2px, rgba(255,255,255,.008) 4px)",
+      borderRadius: "inherit",
+    }} />
+    <div style={{ position: "relative", zIndex: 1 }}>{children}</div>
   </div>
 );
 
+/* ─── Section label ─────────────────────────────── */
+const Label = ({ children, style = {} }) => (
+  <p style={{
+    fontSize: 10.5, fontWeight: 700, color: T.textDim,
+    textTransform: "uppercase", letterSpacing: ".12em",
+    marginBottom: 14, ...style,
+  }}>{children}</p>
+);
+
+/* ─── Field ─────────────────────────────── */
+const Field = ({ icon: Icon_, placeholder, value, onChange, onKeyDown, error, hint, type = "text" }) => {
+  const [focused, setFocused] = useState(false);
+  return (
+    <div style={{ flex: 1 }}>
+      <div style={{ position: "relative" }}>
+        <span style={{
+          position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
+          pointerEvents: "none", display: "flex",
+          color: error ? T.red : focused ? T.primary : T.textDim,
+          transition: "color .2s",
+        }}>
+          <Icon_ size={15} />
+        </span>
+        <input
+          type={type}
+          placeholder={placeholder}
+          value={value}
+          onChange={onChange}
+          onKeyDown={onKeyDown}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={{
+            width: "100%", height: 46, fontFamily: "inherit",
+            background: focused ? "rgba(99,102,241,.05)" : "rgba(255,255,255,.025)",
+            border: `1px solid ${error ? "rgba(239,68,68,.45)" : focused ? T.borderFocus : T.border}`,
+            borderRadius: T.radius.sm, padding: "0 14px 0 42px",
+            color: T.text, fontSize: 14, outline: "none",
+            transition: "border-color .18s, background .18s",
+            boxShadow: focused ? `0 0 0 3px rgba(99,102,241,.08)` : "none",
+          }}
+        />
+      </div>
+      {error && <p style={{ fontSize: 11, color: T.red, marginTop: 5, paddingLeft: 2 }}>{error}</p>}
+      {hint && !error && <p style={{ fontSize: 11, color: T.green, marginTop: 5, paddingLeft: 2 }}>{hint}</p>}
+    </div>
+  );
+};
+
+/* ─── MetricCard ─────────────────────────────── */
+const MetricCard = ({ icon: Icon_, label, value, sub, accent = T.primary, flash = false }) => (
+  <motion.div
+    whileHover={{ y: -3, boxShadow: `0 16px 48px rgba(0,0,0,.45), 0 0 0 1px ${accent}20` }}
+    transition={{ duration: 0.18 }}
+    style={{
+      flex: 1, minWidth: 0,
+      background: T.surface,
+      border: `1px solid ${T.border}`,
+      borderRadius: T.radius.lg,
+      padding: "20px",
+      backdropFilter: "blur(16px)",
+      boxShadow: "0 4px 20px rgba(0,0,0,.25)",
+      position: "relative", overflow: "hidden",
+    }}
+  >
+    <div style={{
+      position: "absolute", top: 0, left: 0, right: 0, height: 1,
+      background: `linear-gradient(90deg, transparent, ${accent}40, transparent)`,
+    }} />
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+      <div style={{
+        width: 34, height: 34, borderRadius: 9,
+        background: `${accent}16`, border: `1px solid ${accent}28`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: accent, flexShrink: 0,
+      }}>
+        <Icon_ size={16} />
+      </div>
+      {flash && (
+        <span style={{
+          width: 6, height: 6, borderRadius: "50%", background: T.green,
+          boxShadow: `0 0 10px ${T.green}`, animation: "ping 1.5s ease-out infinite",
+        }} />
+      )}
+    </div>
+    <motion.p
+      key={value}
+      initial={{ scale: flash ? 1.1 : 1 }}
+      animate={{ scale: 1 }}
+      transition={{ duration: 0.25 }}
+      style={{
+        fontSize: 28, fontWeight: 800, color: T.text,
+        letterSpacing: "-1px", lineHeight: 1, marginBottom: 6,
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      {value ?? "—"}
+    </motion.p>
+    <p style={{ fontSize: 12.5, color: T.textMuted, fontWeight: 500 }}>{label}</p>
+    {sub && <p style={{ fontSize: 11, color: accent, marginTop: 3, opacity: 0.75 }}>{sub}</p>}
+  </motion.div>
+);
+
+/* ─── PrimaryButton ─────────────────────────────── */
+const PrimaryButton = ({ onClick, disabled, loading, children, style = {} }) => (
+  <motion.button
+    onClick={onClick}
+    disabled={disabled}
+    whileHover={!disabled ? { scale: 1.015 } : {}}
+    whileTap={!disabled ? { scale: 0.975 } : {}}
+    style={{
+      background: "linear-gradient(135deg, #6366F1 0%, #818cf8 50%, #06B6D4 100%)",
+      backgroundSize: "200% 200%",
+      border: "none", borderRadius: T.radius.sm, color: "#fff",
+      fontSize: 13.5, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer",
+      display: "flex", alignItems: "center", gap: 7,
+      padding: "0 20px", height: 46,
+      opacity: disabled ? 0.55 : 1,
+      boxShadow: disabled ? "none" : "0 4px 20px rgba(99,102,241,.38), inset 0 1px 0 rgba(255,255,255,.15)",
+      whiteSpace: "nowrap", flexShrink: 0, fontFamily: "inherit",
+      letterSpacing: ".01em",
+      ...style,
+    }}
+  >
+    {loading ? <Spinner size={14} /> : children}
+  </motion.button>
+);
+
+/* ─── IconButton ─────────────────────────────── */
+const IconButton = ({ onClick, title, children, style = {} }) => (
+  <motion.button
+    onClick={onClick}
+    title={title}
+    whileHover={{ scale: 1.06, background: "rgba(255,255,255,.09)" }}
+    whileTap={{ scale: 0.93 }}
+    style={{
+      width: 34, height: 34, borderRadius: 8, flexShrink: 0,
+      background: "rgba(255,255,255,.04)", border: `1px solid ${T.border}`,
+      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+      color: T.textMuted, transition: "background .15s",
+      fontFamily: "inherit", ...style,
+    }}
+  >
+    {children}
+  </motion.button>
+);
+
+/* ─── GhostButton ─────────────────────────────── */
+const GhostButton = ({ onClick, disabled, children, style = {} }) => (
+  <motion.button
+    onClick={onClick}
+    disabled={disabled}
+    whileHover={!disabled ? { background: "rgba(255,255,255,.07)", color: "#E5E7EB" } : {}}
+    whileTap={!disabled ? { scale: 0.97 } : {}}
+    style={{
+      height: 34, padding: "0 13px", borderRadius: 8,
+      background: "rgba(255,255,255,.03)", border: `1px solid ${T.border}`,
+      color: T.textMuted, fontSize: 12, fontWeight: 500,
+      cursor: disabled ? "not-allowed" : "pointer",
+      display: "flex", alignItems: "center", gap: 6,
+      opacity: disabled ? 0.45 : 1,
+      transition: "background .15s, color .15s",
+      fontFamily: "inherit", whiteSpace: "nowrap", ...style,
+    }}
+  >
+    {children}
+  </motion.button>
+);
+
+/* ─── InfoTip ─────────────────────────────── */
 const InfoTip = ({ text }) => {
   const [show, setShow] = useState(false);
   return (
-    <span style={{ position:"relative", display:"inline-flex" }}
-      onMouseEnter={()=>setShow(true)} onMouseLeave={()=>setShow(false)}>
+    <span style={{ position: "relative", display: "inline-flex" }}
+      onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
       <span style={{
-        width:14, height:14, borderRadius:"50%", border:"1px solid rgba(255,255,255,.15)",
-        display:"inline-flex", alignItems:"center", justifyContent:"center",
-        fontSize:9, color:"#475569", cursor:"default", userSelect:"none",
+        width: 14, height: 14, borderRadius: "50%", border: `1px solid ${T.border}`,
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        fontSize: 8.5, color: T.textDim, cursor: "default", userSelect: "none",
       }}>?</span>
-      {show && (
-        <span style={{
-          position:"absolute", bottom:"calc(100% + 6px)", left:"50%", transform:"translateX(-50%)",
-          background:"#1a1a2e", border:"1px solid rgba(255,255,255,.1)",
-          borderRadius:8, padding:"7px 11px", fontSize:11.5, color:"#94a3b8",
-          whiteSpace:"nowrap", zIndex:50, lineHeight:1.5,
-          boxShadow:"0 8px 24px rgba(0,0,0,.4)",
-        }}>{text}</span>
-      )}
+      <AnimatePresence>
+        {show && (
+          <motion.span
+            initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            style={{
+              position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)",
+              background: "#0D0D1A", border: `1px solid ${T.border}`,
+              borderRadius: T.radius.sm, padding: "8px 12px",
+              fontSize: 11.5, color: "#9CA3AF",
+              whiteSpace: "nowrap", zIndex: 50, lineHeight: 1.5,
+              boxShadow: "0 12px 40px rgba(0,0,0,.6)", pointerEvents: "none",
+            }}
+          >{text}</motion.span>
+        )}
+      </AnimatePresence>
     </span>
   );
 };
 
-const SectionLabel = ({ children }) => (
-  <p style={{ fontSize:11, fontWeight:600, color:"#334155", textTransform:"uppercase", letterSpacing:".08em", marginBottom:14 }}>
-    {children}
-  </p>
+/* ─── Progress bar ─────────────────────────────── */
+const ProgressBar = ({ pct, color = T.primary, glow = false, height = 5 }) => (
+  <div style={{ width: "100%", height, background: "rgba(255,255,255,.05)", borderRadius: 99, overflow: "hidden" }}>
+    <motion.div
+      initial={{ width: 0 }}
+      animate={{ width: `${Math.min(pct, 100)}%` }}
+      transition={{ duration: 0.7, ease: "easeOut" }}
+      style={{
+        height: "100%", borderRadius: 99,
+        background: color,
+        boxShadow: glow ? `0 0 10px ${color}80` : "none",
+      }}
+    />
+  </div>
 );
 
-const iconBtn = {
-  width:32, height:32, borderRadius:8, flexShrink:0,
-  background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.08)",
-  cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
-};
-
-const cardWrap = {
-  background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)",
-  borderRadius:14, padding:"16px 18px",
-};
-
+/* ═══════════════════════════════════════════════════════════
+   MAIN APP
+═══════════════════════════════════════════════════════════ */
 export default function App() {
   const [url, setUrl] = useState("");
   const [alias, setAlias] = useState("");
@@ -158,12 +370,13 @@ export default function App() {
   const [liveChart, setLiveChart] = useState([]);
 
   const [flash, setFlash] = useState(false);
-  const [toast, setToast] = useState({ msg:"", type:"ok" });
+  const [toast, setToast] = useState({ msg: "", type: "ok" });
   const [apiKey, setApiKey] = useState(localStorage.getItem("apiKey") || "");
   const [apiStats, setApiStats] = useState(null);
   const [secondsLeft, setSecondsLeft] = useState(60);
   const [spike, setSpike] = useState(false);
   const [simulating, setSimulating] = useState(false);
+  const [keyCopied, setKeyCopied] = useState(false);
 
   const shortUrlRef = useRef(shortUrl);
   const wsRef = useRef(null);
@@ -171,9 +384,9 @@ export default function App() {
   const fallbackTimer = useRef(null);
   shortUrlRef.current = shortUrl;
 
-  const showToast = (msg, type="ok") => {
-    setToast({msg, type});
-    setTimeout(() => setToast({msg:"", type:"ok"}), 3500);
+  const showToast = (msg, type = "ok") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast({ msg: "", type: "ok" }), 3500);
   };
 
   const triggerFlash = () => {
@@ -184,7 +397,7 @@ export default function App() {
   useEffect(() => {
     const key = localStorage.getItem("apiKey");
     if (!key) {
-      fetch(`${BASE_URL}/api/generate-api-key`, { method:"POST" })
+      fetch(`${BASE_URL}/api/generate-api-key`, { method: "POST" })
         .then(res => res.ok ? res.json() : Promise.reject())
         .then(data => {
           localStorage.setItem("apiKey", data.api_key);
@@ -196,12 +409,12 @@ export default function App() {
 
   const generateKey = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/api/generate-api-key`, { method:"POST" });
+      const res = await fetch(`${BASE_URL}/api/generate-api-key`, { method: "POST" });
       if (!res.ok) throw new Error();
       const data = await res.json();
       localStorage.setItem("apiKey", data.api_key);
       setApiKey(data.api_key);
-      showToast("API key generated");
+      showToast("API key regenerated");
     } catch {
       showToast("Failed to generate API key", "error");
     }
@@ -215,14 +428,12 @@ export default function App() {
       const used = data.current_window ?? data.total_usage ?? data.used ?? data.requests ?? 0;
       const limit = data.limit ?? data.max ?? 10;
       const remaining = data.remaining ?? Math.max(0, limit - used);
-      const throttled = data.status==="throttled"||data.status==="rate_limited"||data.throttled===true||data.rate_limited===true;
+      const throttled = data.status === "throttled" || data.status === "rate_limited" || data.throttled === true || data.rate_limited === true;
       setApiStats({
-        current_window: used,
-        remaining,
-        limit,
+        current_window: used, remaining, limit,
         status: (throttled || remaining <= 0) ? "throttled" : "active"
       });
-    } catch {}
+    } catch { }
   };
 
   useEffect(() => {
@@ -245,15 +456,13 @@ export default function App() {
         devices: data.devices || {},
         countries: data.countries || {},
         recent: (data.clicks || []).map(c => ({
-          ip: c.ip,
-          device: c.device,
-          country: c.country,
+          ip: c.ip, device: c.device, country: c.country,
           time: new Date(c.timestamp).toLocaleTimeString()
         }))
       }));
       setTotalClicks(prev => Math.max(prev, data.total ?? 0));
       setUniqueClients(data.unique ?? 0);
-    } catch {}
+    } catch { }
   }, []);
 
   useEffect(() => {
@@ -269,27 +478,16 @@ export default function App() {
       wsRef.current.onerror = null;
       wsRef.current.close();
     }
-    if (reconnectTimer.current) {
-      clearTimeout(reconnectTimer.current);
-      reconnectTimer.current = null;
-    }
-
+    if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
     const ws = new WebSocket("wss://smart-url-shortner.onrender.com/ws");
     wsRef.current = ws;
-
-    ws.onopen = () => {
-      setWsStatus("live");
-      setReconnectAttempts(0);
-    };
-
+    ws.onopen = () => { setWsStatus("live"); setReconnectAttempts(0); };
     ws.onclose = () => {
       setWsStatus("disconnected");
       setReconnectAttempts(n => n + 1);
       reconnectTimer.current = setTimeout(connectWs, 3000);
     };
-
     ws.onerror = () => ws.close();
-
     ws.onmessage = (event) => {
       let msg;
       try { msg = JSON.parse(event.data); } catch { return; }
@@ -297,17 +495,14 @@ export default function App() {
       if (!shortUrl) return;
       const code = shortUrl.split("/").pop();
       if (msg.short_code !== code) return;
-
       setTotalClicks(prev => prev + 1);
       setLiveEvents(prev => prev + 1);
-
       setLiveChart(prev => {
         const lastCount = prev.length ? prev[prev.length - 1].count : 0;
         const point = { time: new Date().toLocaleTimeString(), count: lastCount + 1 };
         const updated = [...prev, point];
         return updated.length > 30 ? updated.slice(-30) : updated;
       });
-
       triggerFlash();
     };
   }, [shortUrl]);
@@ -331,28 +526,24 @@ export default function App() {
     setLoading(true);
     try {
       const res = await fetch(`${BASE_URL}/api/shorten`, {
-        method:"POST",
-        headers: getHeaders(),
-        body: JSON.stringify({ long_url:fixedUrl, alias:alias.trim()||null }),
+        method: "POST", headers: getHeaders(),
+        body: JSON.stringify({ long_url: fixedUrl, alias: alias.trim() || null }),
       });
       const data = await res.json();
       if (!res.ok) {
-        if (res.status===429) { showToast("Too many requests. Please wait for reset","error"); setLoading(false); return; }
-        if (res.status===401) { showToast("API key missing or invalid","error"); setLoading(false); return; }
-        if (res.status===409) { setAliasError("Alias already taken"); showToast("Alias already taken","error"); setLoading(false); return; }
-        throw new Error(data.detail||"Error");
+        if (res.status === 429) { showToast("Rate limit reached. Wait for reset.", "error"); setLoading(false); return; }
+        if (res.status === 401) { showToast("API key missing or invalid", "error"); setLoading(false); return; }
+        if (res.status === 409) { setAliasError("Alias already taken"); showToast("Alias already taken", "error"); setLoading(false); return; }
+        throw new Error(data.detail || "Error");
       }
       setShortUrl(data.short_url);
       setStats(null);
-      setTotalClicks(0);
-      setUniqueClients(0);
-      setLiveEvents(0);
-      setLiveChart([]);
-      if (alias.trim()) setAliasHint("Custom alias applied");
-      showToast("Short link generated successfully");
-      setSpike(true); setTimeout(()=>setSpike(false),500);
+      setTotalClicks(0); setUniqueClients(0); setLiveEvents(0); setLiveChart([]);
+      if (alias.trim()) setAliasHint("Custom alias applied ✓");
+      showToast("Short link created");
+      setSpike(true); setTimeout(() => setSpike(false), 500);
       setSecondsLeft(60); fetchUsage();
-    } catch(err) { showToast(err.message||"Something went wrong. Please try again","error"); }
+    } catch (err) { showToast(err.message || "Something went wrong", "error"); }
     setLoading(false);
   };
 
@@ -364,25 +555,17 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         setStats({
-          total: data.total ?? 0,
-          unique: data.unique ?? 0,
-          devices: data.devices ?? {},
-          countries: data.countries ?? {},
+          total: data.total ?? 0, unique: data.unique ?? 0,
+          devices: data.devices ?? {}, countries: data.countries ?? {},
           recent: (data.clicks || []).map(c => ({
-            ip: c.ip,
-            device: c.device,
-            country: c.country,
+            ip: c.ip, device: c.device, country: c.country,
             time: new Date(c.timestamp).toLocaleTimeString()
           }))
         });
         setTotalClicks(prev => Math.max(prev, data.total ?? 0));
         setUniqueClients(data.unique ?? 0);
-      } else {
-        showToast("Failed to load analytics", "error");
-      }
-    } catch {
-      showToast("Something went wrong. Please try again","error");
-    }
+      } else { showToast("Failed to load analytics", "error"); }
+    } catch { showToast("Something went wrong", "error"); }
     setALoading(false);
   };
 
@@ -410,333 +593,602 @@ export default function App() {
   const copy = () => {
     navigator.clipboard.writeText(shortUrl);
     setCopied(true);
-    setTimeout(()=>setCopied(false),2000);
-    showToast("Link copied to clipboard");
+    setTimeout(() => setCopied(false), 2000);
+    showToast("Copied to clipboard");
   };
 
-  const ICONS = {
-    link: "M6.5 9.5a4 4 0 005.657-5.657L10.5 2.19A4 4 0 004.843 7.847L6.5 9.5zm3 0a4 4 0 00-5.657 5.657l1.657 1.653A4 4 0 0011.157 8.153L9.5 9.5",
-    copy: "M5 5h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1zM3 11V3h8",
-    check: "M3 8l3.5 3.5 6.5-7",
-    clock: "M8 4v4l2.5 2.5M8 2a6 6 0 100 12A6 6 0 008 2z",
-    user: "M8 7a3 3 0 100-6 3 3 0 000 6zm-5 6a5 5 0 0110 0",
-    chart: "M2 12l4-4 3 2 5-6",
-    arrow: "M2 8h12M10 4l4 4-4 4",
-    ext: "M11 2h3v3M14 2L8 8M6 3H3v10h10V10",
-    key: "M11 5a2 2 0 11-4 0 2 2 0 014 0zM3 13l3.5-3.5M8.5 9.5L7 11l1 1M5 12l1 1",
-    refresh: "M2 8a6 6 0 0110.93-3M14 8a6 6 0 01-10.93 3M14 5v3h-3M2 11v-3h3",
-    zap: "M9 2L4 9h4l-1 5 7-7H10l1-5z",
-    at: "M8 10a2 2 0 100-4 2 2 0 000 4zm4-2a4 4 0 11-8 0 4 4 0 018 0zm2 0c0 1.1-.3 2-.8 2.7-.5.6-1.2.9-2 .5-.8-.4-.8-1.2-.7-2.2",
-    globe: "M8 2a6 6 0 100 12A6 6 0 008 2zM2 8h12M8 2c-1.5 2-2.5 3.8-2.5 6s1 4 2.5 6M8 2c1.5 2 2.5 3.8 2.5 6s-1 4-2.5 6",
-    mobile: "M5 2h6a1 1 0 011 1v10a1 1 0 01-1 1H5a1 1 0 01-1-1V3a1 1 0 011-1zm3 10h.01",
-    desktop: "M2 3h12a1 1 0 011 1v7a1 1 0 01-1 1H2a1 1 0 01-1-1V4a1 1 0 011-1zm4 9h4m-2 0v1",
-    download:"M8 2v8m-3-3l3 3 3-3M3 13h10",
+  const copyKey = () => {
+    navigator.clipboard.writeText(apiKey);
+    setKeyCopied(true);
+    setTimeout(() => setKeyCopied(false), 2000);
+    showToast("API key copied");
   };
 
-  const wsColor = { live:"#4ade80", connecting:"#fbbf24", disconnected:"#f87171" }[wsStatus];
-  const wsLabel = wsStatus==="live" ? "WebSocket connected"
-    : wsStatus==="connecting" ? "Connecting…"
-    : `Disconnected · retry ${reconnectAttempts}`;
-
-  const apiKeyDisplay = apiKey ? `${apiKey.slice(0,8)}••••••••${apiKey.slice(-4)}` : "Generating…";
-  const usagePct = apiStats ? Math.min((apiStats.current_window/apiStats.limit)*100,100) : 0;
-  const isThrottled = apiStats!=null && apiStats.status==="throttled";
-  const barColor = isThrottled?"#f87171":usagePct>80?"linear-gradient(90deg,#f97316,#f87171)":"linear-gradient(90deg,#6366f1,#34d399)";
+  /* ── derived ── */
+  const apiKeyDisplay = apiKey ? `${apiKey.slice(0, 10)}••••••${apiKey.slice(-4)}` : "Generating…";
+  const usagePct = apiStats ? Math.min((apiStats.current_window / apiStats.limit) * 100, 100) : 0;
+  const isThrottled = apiStats != null && apiStats.status === "throttled";
 
   const deviceList = Object.entries(stats?.devices || {}).map(([device, count]) => ({ device, count: Number(count) || 0 }));
   const countryList = Object.entries(stats?.countries || {}).map(([country, count]) => ({ country, count: Number(count) || 0 })).sort((a, b) => b.count - a.count);
-
   const mobileCount = deviceList.find(d => d.device === "mobile")?.count || 0;
   const desktopCount = deviceList.find(d => d.device === "desktop")?.count || 0;
   const totalDevice = mobileCount + desktopCount || 1;
-  const mobilePct = Math.round((mobileCount / totalDevice) * 100);
-  const desktopPct = Math.round((desktopCount / totalDevice) * 100);
+
+  const wsStatusLabel = wsStatus === "live" ? "Live" : wsStatus === "connecting" ? "Connecting" : `Retry ${reconnectAttempts}`;
+  const wsColor = { live: T.green, connecting: T.amber, disconnected: T.red }[wsStatus];
+
+  const COUNTRY_FLAGS = {
+    "India": "🇮🇳", "United States": "🇺🇸", "United Kingdom": "🇬🇧",
+    "Germany": "🇩🇪", "France": "🇫🇷", "Japan": "🇯🇵", "Canada": "🇨🇦",
+    "Australia": "🇦🇺", "Brazil": "🇧🇷", "China": "🇨🇳", "Singapore": "🇸🇬",
+    "Netherlands": "🇳🇱", "Russia": "🇷🇺", "South Korea": "🇰🇷", "Unknown": "🌐",
+  };
+  const getFlag = (country) => COUNTRY_FLAGS[country] || "🌐";
+
+  const ACCENTS = [T.primary, T.green, T.amber, T.red, T.cyan];
+
+  const fadeUp = {
+    hidden: { opacity: 0, y: 14 },
+    visible: (i = 0) => ({ opacity: 1, y: 0, transition: { delay: i * 0.06, duration: 0.38, ease: "easeOut" } })
+  };
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&display=swap');
-        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-        body{background:#07070f;}
-        input::placeholder{color:#1e293b;}
-        @keyframes spin {to{transform:rotate(360deg);}}
-        @keyframes ping {0%{transform:scale(1);opacity:.7;}100%{transform:scale(2.4);opacity:0;}}
-        @keyframes slideUp {from{opacity:0;transform:translateY(8px) translateX(-50%);}to{opacity:1;transform:translateY(0) translateX(-50%);}}
-        @keyframes fadeIn {from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
-        @keyframes flashPop {0%,100%{transform:scale(1);}40%{transform:scale(1.1);}}
-        @keyframes spikeAnim {0%{transform:scale(1);}40%{transform:scale(1.12);}100%{transform:scale(1);}}
-        @keyframes simPulse {0%,100%{opacity:1;}50%{opacity:.35;}}
-        .key-btn:hover { background:rgba(255,255,255,.08) !important; border-color:rgba(255,255,255,.15) !important; }
-        .copy-key-btn:hover { color:#a5b4fc !important; }
-        .action-btn:hover { background:rgba(255,255,255,.08) !important; border-color:rgba(255,255,255,.14) !important; color:#e2e8f0 !important; }
-        .shorten-btn:hover { opacity:.88 !important; }
-        .shorten-btn:active { transform:scale(.98); }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: ${T.bg}; font-family: 'Inter', -apple-system, sans-serif; color: ${T.text}; }
+        input { color: ${T.text}; }
+        input::placeholder { color: ${T.textDim}; }
+        a { text-decoration: none; }
+        button { font-family: 'Inter', -apple-system, sans-serif; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes ping {
+          0% { transform: scale(1); opacity: .75; }
+          100% { transform: scale(2.2); opacity: 0; }
+        }
+        @keyframes gradientShift {
+          0%,100% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+        }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.08); border-radius: 99px; }
       `}</style>
 
+      {/* ── Ambient blobs ── */}
+      <div aria-hidden style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0, overflow: "hidden" }}>
+        <div style={{
+          position: "absolute", top: "-15%", left: "-10%",
+          width: 800, height: 800, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(99,102,241,.065) 0%, transparent 65%)",
+          filter: "blur(1px)",
+        }} />
+        <div style={{
+          position: "absolute", bottom: "-15%", right: "-8%",
+          width: 700, height: 700, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(34,211,238,.045) 0%, transparent 65%)",
+          filter: "blur(1px)",
+        }} />
+        <div style={{
+          position: "absolute", top: "40%", right: "15%",
+          width: 400, height: 400, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(167,139,250,.03) 0%, transparent 70%)",
+        }} />
+      </div>
+
       <div style={{
-        minHeight:"100vh", background:"#07070f",
-        fontFamily:"'Sora',-apple-system,sans-serif",
-        display:"flex", alignItems:"flex-start", justifyContent:"center",
-        padding:"44px 16px 80px", position:"relative", overflow:"hidden",
+        minHeight: "100vh", position: "relative", zIndex: 1,
+        display: "flex", flexDirection: "column", alignItems: "center",
+        padding: "0 16px 100px",
       }}>
-        <div style={{ position:"fixed", inset:0, pointerEvents:"none", background:"radial-gradient(ellipse 55% 45% at 15% 0%,rgba(99,102,241,.13),transparent 70%)" }} />
-        <div style={{ position:"fixed", inset:0, pointerEvents:"none", background:"radial-gradient(ellipse 45% 40% at 85% 100%,rgba(16,185,129,.08),transparent 70%)" }} />
 
-        <div style={{ width:"100%", maxWidth:540, position:"relative", zIndex:1 }}>
-
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:38 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              <div style={{ width:35, height:35, borderRadius:10, background:"linear-gradient(135deg,#6366f1,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                <Icon d={ICONS.link} size={16} color="white" />
-              </div>
-              <div>
-                <span style={{ fontSize:16, fontWeight:600, color:"#f1f5f9", letterSpacing:"-.3px", display:"block" }}>sniplink</span>
-                <span style={{ fontSize:9.5, color:"#1e293b", letterSpacing:".08em", textTransform:"uppercase" }}>rate-limited · real-time</span>
-              </div>
+        {/* ── Nav ── */}
+        <motion.nav
+          initial={{ opacity: 0, y: -12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          style={{
+            width: "100%", maxWidth: 800,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "18px 0", marginBottom: 32,
+            borderBottom: `1px solid ${T.border}`,
+          }}
+        >
+          {/* Logo */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: "linear-gradient(135deg, #6366F1, #22D3EE)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 4px 16px rgba(99,102,241,.45)",
+            }}>
+              <Link2 size={14} color="white" />
             </div>
-            <div style={{ display:"flex", alignItems:"center", gap:7, background:"rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.07)", borderRadius:20, padding:"5px 13px" }}>
-              <LiveDot on={wsStatus==="live"} />
-              <span style={{ fontSize:12, fontWeight:500, color:wsColor }}>{wsLabel}</span>
+            <div>
+              <span style={{ fontSize: 14.5, fontWeight: 700, color: T.text, letterSpacing: "-.4px" }}>sniplink</span>
+              <span style={{
+                display: "block", fontSize: 9.5, color: T.textDim,
+                letterSpacing: ".1em", textTransform: "uppercase",
+              }}>v2.0</span>
             </div>
           </div>
 
-          <div style={{ marginBottom:32, textAlign:"center" }}>
-            <h1 style={{ fontSize:33, fontWeight:600, color:"#f8fafc", letterSpacing:"-.8px", lineHeight:1.18, marginBottom:10 }}>
-              Rate-Limited Smart Links<br />with Real-Time Analytics
+          {/* Status pill */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8,
+            background: T.surface, border: `1px solid ${T.border}`,
+            borderRadius: 99, padding: "6px 14px",
+          }}>
+            <LivePulse on={wsStatus === "live"} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: wsColor }}>{wsStatusLabel}</span>
+            <span style={{ fontSize: 11.5, color: T.textDim }}>WebSocket</span>
+          </div>
+        </motion.nav>
+
+        <div style={{ width: "100%", maxWidth: 800 }}>
+
+          {/* ── Hero ── */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.05 }}
+            style={{ textAlign: "center", marginBottom: 44 }}
+          >
+            {/* Feature chips */}
+            <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 7, marginBottom: 22 }}>
+              {[
+                { icon: <Activity size={10} />, label: "Realtime", color: T.green },
+                { icon: <BarChart2 size={10} />, label: "Analytics", color: T.primary },
+                { icon: <Zap size={10} />, label: "Redis", color: T.amber },
+                { icon: <Wifi size={10} />, label: "WebSocket", color: T.cyan },
+                { icon: <Shield size={10} />, label: "API Keys", color: T.purple },
+                { icon: <TrendingUp size={10} />, label: "Rate Limited", color: T.red },
+              ].map(({ icon, label, color }) => (
+                <motion.span
+                  key={label}
+                  whileHover={{ scale: 1.06, y: -1 }}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    background: T.surface, border: `1px solid ${T.border}`,
+                    borderRadius: 99, padding: "4px 11px",
+                    fontSize: 11.5, color: T.textMuted, cursor: "default", userSelect: "none",
+                  }}
+                >
+                  <span style={{ color }}>{icon}</span>
+                  {label}
+                </motion.span>
+              ))}
+            </div>
+
+            <h1 style={{
+              fontSize: "clamp(30px, 5vw, 50px)", fontWeight: 800,
+              color: T.text, letterSpacing: "-1.5px", lineHeight: 1.08,
+              marginBottom: 14,
+            }}>
+              Shorten. Track.{" "}
+              <span style={{
+                background: "linear-gradient(90deg, #818cf8, #22D3EE, #6366F1)",
+                backgroundSize: "300% 100%",
+                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+                animation: "gradientShift 5s ease infinite",
+              }}>Know Everything.</span>
             </h1>
-            <p style={{ fontSize:14.5, color:"#475569", lineHeight:1.7, maxWidth:480, margin:"0 auto" }}>
-              Create controlled, customizable short links with API-key access, rate limiting, and live analytics streaming.
+            <p style={{ fontSize: 16, color: T.textMuted, lineHeight: 1.7, maxWidth: 440, margin: "0 auto" }}>
+              Real-time click analytics, API-key auth, Redis-powered redirects — built for developers.
             </p>
-          </div>
+          </motion.div>
 
-          <div style={{ marginBottom:10, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.06)", borderRadius:13, padding:"14px 16px", animation:"fadeIn .3s ease" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:10 }}>
-              <p style={{ fontSize:11, fontWeight:600, color:"#475569", textTransform:"uppercase", letterSpacing:".1em" }}>API Access Key</p>
-              <InfoTip text="Required for all requests. Tracks usage and prevents abuse." />
-            </div>
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:9, minWidth:0 }}>
-                <div style={{ width:30, height:30, borderRadius:8, flexShrink:0, background:apiKey?"rgba(99,102,241,.12)":"rgba(251,191,36,.1)", border:`1px solid ${apiKey?"rgba(99,102,241,.2)":"rgba(251,191,36,.2)"}`, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                  {apiKey ? <Icon d={ICONS.key} size={13} color="#818cf8" /> : <Spinner size={11} color="#fbbf24" />}
-                </div>
-                <div style={{ minWidth:0 }}>
-                  <p style={{ fontSize:11.5, color:apiKey?"#64748b":"#fbbf24", fontFamily:"'Courier New',monospace", letterSpacing:".04em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{apiKeyDisplay}</p>
-                  <p style={{ fontSize:10, color:"#2d3748", marginTop:2 }}>Authenticates requests and enforces rate limits per user</p>
-                </div>
-              </div>
-              <div style={{ display:"flex", gap:6, flexShrink:0 }}>
-                {apiKey && (
-                  <button className="copy-key-btn" onClick={()=>{navigator.clipboard.writeText(apiKey);showToast("API key copied");}} title="Copy full key"
-                    style={{ width:28, height:28, borderRadius:7, transition:"color .2s", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.08)", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                    <Icon d={ICONS.copy} size={12} color="#334155" />
-                  </button>
-                )}
-                <button className="key-btn" onClick={generateKey} title="Regenerate"
-                  style={{ height:28, padding:"0 10px", borderRadius:7, background:"rgba(255,255,255,.04)", border:"1px solid rgba(255,255,255,.08)", color:"#475569", fontSize:11, fontWeight:500, cursor:"pointer", display:"flex", alignItems:"center", gap:5, transition:"all .2s" }}>
-                  <Icon d={ICONS.refresh} size={11} color="#475569" />Regenerate
-                </button>
-              </div>
-            </div>
+          {/* ── Main stack ── */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-            {apiStats && (
-              <div style={{ marginTop:14 }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:7 }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-                    <span style={{ fontSize:11, color:"#475569" }}>
-                      Requests (current window):{" "}
-                      <span style={{ color:isThrottled?"#f87171":"#94a3b8", fontWeight:600 }}>{apiStats.current_window}</span>
-                      <span style={{ color:"#2d3748" }}>/{apiStats.limit}</span>
-                    </span>
-                    <span style={{ fontSize:9.5, fontWeight:600, letterSpacing:".07em", textTransform:"uppercase", color:isThrottled?"#f87171":"#4ade80", background:isThrottled?"rgba(248,113,113,.08)":"rgba(74,222,128,.08)", border:`1px solid ${isThrottled?"rgba(248,113,113,.2)":"rgba(74,222,128,.15)"}`, borderRadius:20, padding:"2px 8px" }}>
-                      {isThrottled?"System status: Throttled":"System status: Active"}
-                    </span>
+            {/* ── API Key Card ── */}
+            <motion.div custom={0} variants={fadeUp} initial="hidden" animate="visible">
+              <Card glow>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
+                  <div style={{
+                    width: 26, height: 26, borderRadius: 7,
+                    background: `${T.primary}18`, border: `1px solid ${T.primary}28`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <Key size={12} color={T.primary} />
                   </div>
-                  <span style={{ fontSize:11, color:"#2d3748", fontFamily:"'Courier New',monospace" }}>Window resets in {secondsLeft}s</span>
-                </div>
-                <div style={{ width:"100%", height:5, background:"rgba(255,255,255,.05)", borderRadius:10, overflow:"hidden" }}>
-                  <div style={{ width:`${usagePct}%`, height:"100%", background:barColor, borderRadius:10, transition:"width .4s ease", animation:spike?"spikeAnim .4s ease":"none" }} />
-                </div>
-                <div style={{ display:"flex", justifyContent:"space-between", marginTop:6 }}>
-                  <span style={{ fontSize:11, color:"#2d3748" }}>Requests remaining: <span style={{ color:"#475569" }}>{apiStats.remaining}</span></span>
-                  <span style={{ fontSize:11, color:"#2d3748" }}>{Math.round(usagePct)}% used</span>
-                </div>
-                {isThrottled && (
-                  <div style={{ marginTop:8, padding:"7px 11px", borderRadius:8, background:"rgba(248,113,113,.06)", border:"1px solid rgba(248,113,113,.18)", fontSize:11.5, color:"#f87171" }}>
-                    ⚠ Rate limit reached. Try again after reset.
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", borderRadius:15, padding:18 }}>
-            <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
-              <Field iconD={ICONS.link} placeholder="Paste your long URL here…" value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>e.key==="Enter"&&shorten()} />
-              <button onClick={shorten} disabled={loading} className="shorten-btn" style={{ height:44, padding:"0 20px", flexShrink:0, background:"linear-gradient(135deg,#6366f1,#06b6d4)", border:"none", borderRadius:11, color:"#fff", fontSize:13.5, fontWeight:500, cursor:"pointer", display:"flex", alignItems:"center", gap:7, opacity:loading?0.7:1, transition:"opacity .2s, transform .15s", whiteSpace:"nowrap" }}>
-                {loading ? <Spinner /> : <><Icon d={ICONS.arrow} size={14} color="white" />Generate Short Link</>}
-              </button>
-            </div>
-            <div style={{ marginTop:10 }}>
-              <Field iconD={ICONS.at} placeholder="Custom alias (optional)" value={alias} onChange={e=>{setAlias(e.target.value);setAliasError("");setAliasHint("");}} error={aliasError} hint={aliasHint} />
-              {!aliasError && !aliasHint && <p style={{ fontSize:11, color:"#2d3748", marginTop:5, paddingLeft:2 }}>Create a personalized short link instead of a random code</p>}
-            </div>
-
-            {shortUrl && (
-              <div style={{ marginTop:14, background:"rgba(99,102,241,.07)", border:"1px solid rgba(99,102,241,.18)", borderRadius:11, padding:"13px 14px", animation:"fadeIn .3s ease" }}>
-                <p style={{ fontSize:10, color:"#6366f1", textTransform:"uppercase", letterSpacing:".1em", fontWeight:600, marginBottom:6 }}>Generated Short Link</p>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:8 }}>
-                  <a href={shortUrl} target="_blank" rel="noreferrer" style={{ fontSize:13.5, color:"#818cf8", wordBreak:"break-all", flex:1 }}>{shortUrl}</a>
-                  <div style={{ display:"flex", gap:6, flexShrink:0 }}>
-                    <button onClick={copy} title="Copy link" style={iconBtn}><Icon d={copied?ICONS.check:ICONS.copy} size={14} color={copied?"#4ade80":"#64748b"} /></button>
-                    <a href={shortUrl} target="_blank" rel="noreferrer" title="Open link" style={{ ...iconBtn, textDecoration:"none" }}><Icon d={ICONS.ext} size={14} color="#64748b" /></a>
-                  </div>
-                </div>
-                <p style={{ fontSize:11, color:"#334155", marginBottom:10 }}>Share or test this link to generate live analytics</p>
-                <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                  <button onClick={loadAnalytics} disabled={aLoading} className="action-btn" style={{ ...iconBtn, width:"auto", padding:"0 12px", gap:6, color:"#64748b", fontSize:12.5, fontWeight:500, transition:"all .2s" }}>
-                    {aLoading ? <Spinner size={11}/> : <Icon d={ICONS.chart} size={13} color="#64748b"/>}
-                    {aLoading?"Loading…":"View Analytics"}
-                  </button>
-                  <button onClick={handleSimulateTraffic} disabled={simulating} className="action-btn" style={{ ...iconBtn, width:"auto", padding:"0 12px", gap:6, color:"#64748b", fontSize:12.5, fontWeight:500, transition:"all .2s" }}>
-                    <Icon d={ICONS.zap} size={13} color={simulating?"#f97316":"#64748b"} />
-                    {simulating ? "Simulating..." : "Simulate Traffic"}
-                  </button>
-                  <button onClick={downloadCSV} className="action-btn" style={{ ...iconBtn, width:"auto", padding:"0 12px", gap:6, color:"#64748b", fontSize:12.5, fontWeight:500, transition:"all .2s" }}>
-                    <Icon d={ICONS.download} size={13} color="#64748b"/>Export CSV
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {shortUrl && (
-            <div style={{ marginTop:14, animation:"fadeIn .35s ease", display:"flex", flexDirection:"column", gap:12 }}>
-              <div style={{ display:"flex", gap:10 }}>
-                <StatCard label="Total Requests" value={totalClicks} accent="#818cf8" flash={flash} />
-                <StatCard label="Unique Clients" value={uniqueClients} accent="#34d399" />
-                <StatCard label="Live Events (WebSocket)" value={liveEvents} accent="#f97316" sub="this session" flash={flash} />
-              </div>
-
-              {liveChart.length > 0 && (
-                <div style={cardWrap}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-                    <SectionLabel>Live Click Stream</SectionLabel>
-                    <span style={{ fontSize:11, color:"#4ade80", background:"rgba(74,222,128,.08)", border:"1px solid rgba(74,222,128,.15)", borderRadius:20, padding:"2px 9px" }}>WebSocket · live</span>
-                  </div>
-                  <ResponsiveContainer width="100%" height={160}>
-                    <LineChart data={liveChart} margin={{ top:4, right:4, left:-24, bottom:0 }}>
-                      <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
-                      <XAxis dataKey="time" tick={{ fill:"#334155", fontSize:10 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-                      <YAxis tick={{ fill:"#334155", fontSize:10 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                      <Tooltip content={<ChartTooltip />} />
-                      <Line type="monotone" dataKey="count" stroke="#4ade80" strokeWidth={2} dot={false}
-                        activeDot={{ r:4, fill:"#4ade80", stroke:"#07070f", strokeWidth:2 }} isAnimationActive={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-
-              {stats && (
-                <>
-                  <div style={{ display:"flex", gap:12 }}>
-                    <div style={{ ...cardWrap, flex:1 }}>
-                      <SectionLabel>Device Breakdown</SectionLabel>
-                      <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                        {deviceList.length > 0 ? deviceList.map(({ device, count }) => {
-                          const pct = Math.round((count / totalDevice) * 100);
-                          const icon = device === "mobile" ? ICONS.mobile : ICONS.desktop;
-                          const color = device === "mobile" ? "#34d399" : "#818cf8";
-                          return (
-                            <div key={device}>
-                              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:5 }}>
-                                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                                  <Icon d={icon} size={12} color={color}/><span style={{ fontSize:12, color:"#475569" }}>{device}</span>
-                                </div>
-                                <span style={{ fontSize:12, color, fontWeight:600 }}>{count} <span style={{ color:"#334155", fontWeight:400 }}>({pct}%)</span></span>
-                              </div>
-                              <div style={{ width:"100%", height:4, background:"rgba(255,255,255,.05)", borderRadius:10, overflow:"hidden" }}>
-                                <div style={{ width:`${pct}%`, height:"100%", background:color, borderRadius:10, transition:"width .5s ease" }} />
-                              </div>
-                            </div>
-                          );
-                        }) : <p style={{ fontSize:12, color:"#475569" }}>No device data yet</p>}
-                      </div>
-                    </div>
-
-                    {countryList.length > 0 && (
-                      <div style={{ ...cardWrap, flex:1 }}>
-                        <SectionLabel>Top Countries</SectionLabel>
-                        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                          {countryList.slice(0,5).map((c,i) => {
-                            const maxCount = countryList[0].count;
-                            const pct = Math.round((c.count / maxCount) * 100);
-                            const colors = ["#818cf8","#34d399","#f97316","#f87171","#fbbf24"];
-                            return (
-                              <div key={i}>
-                                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
-                                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                                    <Icon d={ICONS.globe} size={11} color={colors[i%colors.length]} />
-                                    <span style={{ fontSize:12, color:"#475569" }}>{c.country}</span>
-                                  </div>
-                                  <span style={{ fontSize:12, color:colors[i%colors.length], fontWeight:600 }}>{c.count}</span>
-                                </div>
-                                <div style={{ width:"100%", height:3, background:"rgba(255,255,255,.05)", borderRadius:10, overflow:"hidden" }}>
-                                  <div style={{ width:`${pct}%`, height:"100%", background:colors[i%colors.length], borderRadius:10, transition:"width .5s ease" }} />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#D1D5DB" }}>API Access Key</span>
+                  <InfoTip text="Required for all requests. Tracks usage and enforces rate limits." />
+                  <div style={{ marginLeft: "auto" }}>
+                    {apiStats && (
+                      <Badge
+                        color={isThrottled ? T.red : T.green}
+                        bg={isThrottled ? "rgba(239,68,68,.09)" : "rgba(34,197,94,.09)"}
+                      >
+                        <span style={{
+                          display: "inline-block", width: 5, height: 5, borderRadius: "50%",
+                          background: isThrottled ? T.red : T.green, marginRight: 3,
+                        }} />
+                        {isThrottled ? "Throttled" : "Active"}
+                      </Badge>
                     )}
                   </div>
+                </div>
 
-                  {stats.recent?.length > 0 && (
-                    <div style={cardWrap}>
-                      <SectionLabel>Recent Access Logs</SectionLabel>
-                      <div style={{ display:"flex", flexDirection:"column" }}>
-                        {stats.recent.map((r,i) => (
-                          <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:i<stats.recent.length-1?"1px solid rgba(255,255,255,.04)":"none" }}>
-                            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                              <div style={{ width:32, height:32, borderRadius:"50%", background:"rgba(99,102,241,.12)", border:"1px solid rgba(99,102,241,.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                                <Icon d={ICONS.user} size={13} color="#818cf8"/>
+                {/* Key row */}
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  background: "rgba(0,0,0,.2)", border: `1px solid ${T.border}`,
+                  borderRadius: T.radius.sm, padding: "11px 14px", marginBottom: 16,
+                }}>
+                  {apiKey
+                    ? <Key size={13} color={T.primary} style={{ flexShrink: 0 }} />
+                    : <Spinner size={13} color={T.amber} />
+                  }
+                  <code style={{
+                    flex: 1, fontSize: 12.5, color: apiKey ? "#7C7CA8" : T.amber,
+                    letterSpacing: ".06em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    fontFamily: "'JetBrains Mono','Fira Code','Courier New',monospace",
+                  }}>{apiKeyDisplay}</code>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {apiKey && (
+                      <IconButton onClick={copyKey} title="Copy API key">
+                        {keyCopied ? <Check size={13} color={T.green} /> : <Copy size={13} />}
+                      </IconButton>
+                    )}
+                    <GhostButton onClick={generateKey}>
+                      <RefreshCw size={11} />Regenerate
+                    </GhostButton>
+                  </div>
+                </div>
+
+                {/* Usage */}
+                {apiStats && (
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 9 }}>
+                      <span style={{ fontSize: 12, color: T.textMuted }}>
+                        <span style={{ color: isThrottled ? T.red : T.text, fontWeight: 700 }}>{apiStats.current_window}</span>
+                        <span style={{ color: T.textDim }}>/{apiStats.limit}</span>
+                        <span style={{ marginLeft: 6 }}>requests this window</span>
+                      </span>
+                      <span style={{ fontSize: 11.5, color: T.textDim, fontVariantNumeric: "tabular-nums" }}>
+                        Resets in {secondsLeft}s
+                      </span>
+                    </div>
+                    <ProgressBar
+                      pct={usagePct}
+                      color={isThrottled ? T.red : usagePct > 80
+                        ? `linear-gradient(90deg,${T.amber},${T.red})`
+                        : `linear-gradient(90deg,${T.primary},${T.cyan})`}
+                      glow
+                    />
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 7 }}>
+                      <span style={{ fontSize: 11, color: T.textDim }}>{apiStats.remaining} remaining</span>
+                      <span style={{ fontSize: 11, color: T.textDim }}>{Math.round(usagePct)}% used</span>
+                    </div>
+                    <AnimatePresence>
+                      {isThrottled && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                          style={{
+                            marginTop: 12, padding: "10px 13px", borderRadius: T.radius.sm,
+                            background: "rgba(239,68,68,.07)", border: "1px solid rgba(239,68,68,.18)",
+                            fontSize: 12, color: T.red, display: "flex", alignItems: "center", gap: 8,
+                          }}
+                        >
+                          <AlertTriangle size={12} />
+                          Rate limit reached — new requests are queued until the window resets.
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+              </Card>
+            </motion.div>
+
+            {/* ── Shortener Card ── */}
+            <motion.div custom={1} variants={fadeUp} initial="hidden" animate="visible">
+              <Card>
+                <Label>Shorten a URL</Label>
+                <div style={{ display: "flex", gap: 9, alignItems: "flex-start", marginBottom: 10 }}>
+                  <Field
+                    icon={Link2}
+                    placeholder="Paste your long URL…"
+                    value={url}
+                    onChange={e => setUrl(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && shorten()}
+                  />
+                  <PrimaryButton onClick={shorten} disabled={loading} loading={loading}>
+                    {!loading && <><ChevronRight size={15} />Generate</>}
+                  </PrimaryButton>
+                </div>
+                <Field
+                  icon={Link2}
+                  placeholder="Custom alias (optional)"
+                  value={alias}
+                  onChange={e => { setAlias(e.target.value); setAliasError(""); setAliasHint(""); }}
+                  error={aliasError}
+                  hint={aliasHint}
+                />
+                {!aliasError && !aliasHint && (
+                  <p style={{ fontSize: 11.5, color: T.textDim, marginTop: 7, paddingLeft: 2 }}>
+                    Optional — set a custom slug instead of a random code
+                  </p>
+                )}
+
+                {/* Generated link */}
+                <AnimatePresence>
+                  {shortUrl && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: .985 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ type: "spring", damping: 22, stiffness: 280 }}
+                      style={{
+                        marginTop: 16,
+                        background: "linear-gradient(135deg, rgba(99,102,241,.07) 0%, rgba(34,211,238,.04) 100%)",
+                        border: `1px solid rgba(99,102,241,.22)`,
+                        borderRadius: T.radius.md, padding: "16px 18px",
+                        boxShadow: "0 0 0 1px rgba(99,102,241,.08), 0 8px 32px rgba(99,102,241,.1)",
+                        position: "relative", overflow: "hidden",
+                      }}
+                    >
+                      <div style={{
+                        position: "absolute", top: 0, left: 0, right: 0, height: 1,
+                        background: "linear-gradient(90deg, transparent, rgba(99,102,241,.5), transparent)",
+                      }} />
+                      <p style={{
+                        fontSize: 10, color: T.primary, fontWeight: 700,
+                        textTransform: "uppercase", letterSpacing: ".12em", marginBottom: 10,
+                      }}>
+                        ✦ Link created
+                      </p>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                        <a href={shortUrl} target="_blank" rel="noreferrer"
+                          style={{
+                            fontSize: 14, color: "#818cf8", wordBreak: "break-all", flex: 1, fontWeight: 500,
+                            fontFamily: "'JetBrains Mono','Fira Code','Courier New',monospace",
+                          }}>
+                          {shortUrl}
+                        </a>
+                        <div style={{ display: "flex", gap: 5 }}>
+                          <IconButton onClick={copy} title="Copy link">
+                            {copied ? <Check size={13} color={T.green} /> : <Copy size={13} />}
+                          </IconButton>
+                          <a href={shortUrl} target="_blank" rel="noreferrer">
+                            <IconButton title="Open in new tab">
+                              <ExternalLink size={13} />
+                            </IconButton>
+                          </a>
+                        </div>
+                      </div>
+                      <p style={{ fontSize: 11.5, color: T.textDim, marginBottom: 13 }}>
+                        Share this link — analytics update in real time.
+                      </p>
+                      <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                        <GhostButton onClick={loadAnalytics} disabled={aLoading}>
+                          {aLoading ? <Spinner size={11} color={T.textMuted} /> : <BarChart2 size={12} />}
+                          {aLoading ? "Loading…" : "View Analytics"}
+                        </GhostButton>
+                        <GhostButton onClick={handleSimulateTraffic} disabled={simulating}>
+                          <Zap size={12} color={simulating ? T.amber : undefined} />
+                          {simulating ? "Simulating…" : "Simulate Traffic"}
+                        </GhostButton>
+                        <GhostButton onClick={downloadCSV}>
+                          <Download size={12} />Export CSV
+                        </GhostButton>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </Card>
+            </motion.div>
+
+            {/* ── Analytics ── */}
+            <AnimatePresence>
+              {shortUrl && (
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.38, delay: 0.08 }}
+                  style={{ display: "flex", flexDirection: "column", gap: 14 }}
+                >
+                  {/* Metric cards */}
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    <MetricCard icon={MousePointer} label="Total Requests" value={totalClicks} accent={T.primary} flash={flash} />
+                    <MetricCard icon={Users} label="Unique Clients" value={uniqueClients} accent={T.green} />
+                    <MetricCard icon={Activity} label="Live Events" value={liveEvents} accent={T.amber} sub="This session" flash={flash} />
+                  </div>
+
+                  {/* Live chart */}
+                  {liveChart.length > 0 && (
+                    <Card>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+                        <Label style={{ marginBottom: 0 }}>Live Click Stream</Label>
+                        <Badge color={T.green} bg="rgba(34,197,94,.09)">
+                          <LivePulse on /> WebSocket · Live
+                        </Badge>
+                      </div>
+                      <ResponsiveContainer width="100%" height={175}>
+                        <AreaChart data={liveChart} margin={{ top: 4, right: 4, left: -26, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id="liveGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor={T.primary} stopOpacity={0.28} />
+                              <stop offset="95%" stopColor={T.primary} stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid stroke="rgba(255,255,255,.035)" vertical={false} />
+                          <XAxis dataKey="time" tick={{ fill: T.textDim, fontSize: 9.5 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                          <YAxis tick={{ fill: T.textDim, fontSize: 9.5 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                          <Tooltip content={<ChartTooltip />} />
+                          <Area
+                            type="monotone" dataKey="count"
+                            stroke={T.primary} strokeWidth={2}
+                            fill="url(#liveGrad)"
+                            dot={false}
+                            activeDot={{ r: 4, fill: T.primary, stroke: T.bg, strokeWidth: 2 }}
+                            isAnimationActive={false}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </Card>
+                  )}
+
+                  {/* Device + Countries */}
+                  {stats && (
+                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                      {/* Device Breakdown */}
+                      <Card style={{ flex: 1, minWidth: 240 }}>
+                        <Label>Device Breakdown</Label>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                          {deviceList.length > 0 ? deviceList.map(({ device, count }) => {
+                            const pct = Math.round((count / totalDevice) * 100);
+                            const isM = device === "mobile";
+                            const color = isM ? T.green : T.primary;
+                            const Icon_ = isM ? Smartphone : Monitor;
+                            return (
+                              <div key={device}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 9 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                                    <div style={{
+                                      width: 28, height: 28, borderRadius: 7,
+                                      background: `${color}14`, border: `1px solid ${color}22`,
+                                      display: "flex", alignItems: "center", justifyContent: "center",
+                                    }}>
+                                      <Icon_ size={13} color={color} />
+                                    </div>
+                                    <span style={{ fontSize: 13, color: "#9CA3AF", fontWeight: 500, textTransform: "capitalize" }}>{device}</span>
+                                  </div>
+                                  <span style={{ fontSize: 13, color, fontWeight: 700 }}>
+                                    {count}
+                                    <span style={{ color: T.textDim, fontWeight: 400, fontSize: 11.5 }}> · {pct}%</span>
+                                  </span>
+                                </div>
+                                <ProgressBar pct={pct} color={color} glow />
+                              </div>
+                            );
+                          }) : (
+                            <p style={{ fontSize: 13, color: T.textDim, textAlign: "center", padding: "20px 0" }}>
+                              No device data yet
+                            </p>
+                          )}
+                        </div>
+                      </Card>
+
+                      {/* Countries */}
+                      {countryList.length > 0 && (
+                        <Card style={{ flex: 1, minWidth: 240 }}>
+                          <Label>Top Countries</Label>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                            {countryList.slice(0, 5).map((c, i) => {
+                              const maxCount = countryList[0].count;
+                              const pct = Math.round((c.count / maxCount) * 100);
+                              const color = ACCENTS[i % ACCENTS.length];
+                              return (
+                                <div key={i}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                                      <span style={{ fontSize: 17 }}>{getFlag(c.country)}</span>
+                                      <span style={{ fontSize: 13, color: "#9CA3AF", fontWeight: 500 }}>{c.country}</span>
+                                    </div>
+                                    <span style={{ fontSize: 13, color, fontWeight: 700 }}>{c.count}</span>
+                                  </div>
+                                  <ProgressBar pct={pct} color={color} />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </Card>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Recent Access Logs */}
+                  {stats?.recent?.length > 0 && (
+                    <Card>
+                      <Label>Recent Access Logs</Label>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {stats.recent.map((r, i) => (
+                          <motion.div
+                            key={i}
+                            initial={{ opacity: 0, x: -8 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: i * 0.035 }}
+                            whileHover={{ background: T.surfaceHover, x: 2 }}
+                            style={{
+                              display: "flex", justifyContent: "space-between", alignItems: "center",
+                              padding: "11px 13px",
+                              background: "rgba(255,255,255,.02)",
+                              border: `1px solid ${T.border}`,
+                              borderRadius: T.radius.sm,
+                              transition: "background .15s",
+                              cursor: "default",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+                              <div style={{
+                                width: 34, height: 34, borderRadius: 9,
+                                background: `${T.primary}14`, border: `1px solid ${T.primary}22`,
+                                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                              }}>
+                                {r.device === "mobile"
+                                  ? <Smartphone size={14} color={T.primary} />
+                                  : <Monitor size={14} color={T.primary} />}
                               </div>
                               <div>
-                                <p style={{ fontSize:13, color:"#e2e8f0", fontWeight:500, fontFamily:"'Courier New',monospace" }}>{r.ip}</p>
-                                <div style={{ display:"flex", gap:8, marginTop:2 }}>
-                                  {r.device && <span style={{ fontSize:10, color:"#475569" }}>{r.device}</span>}
-                                  {r.country && <span style={{ fontSize:10, color:"#475569" }}>· {r.country}</span>}
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                                  <p style={{
+                                    fontSize: 12.5, color: "#C4C4D0", fontWeight: 600,
+                                    fontFamily: "'JetBrains Mono','Fira Code','Courier New',monospace",
+                                  }}>{r.ip}</p>
+                                  {r.country && <span style={{ fontSize: 13 }}>{getFlag(r.country)}</span>}
+                                </div>
+                                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                  {r.device && <Badge color={T.primary}>{r.device}</Badge>}
+                                  {r.country && (
+                                    <span style={{ fontSize: 11, color: T.textDim }}>{r.country}</span>
+                                  )}
                                 </div>
                               </div>
                             </div>
-                            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                              <Icon d={ICONS.clock} size={12} color="#334155"/>
-                              <span style={{ fontSize:12, color:"#475569" }}>{r.time}</span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+                              <Clock size={11} color={T.textDim} />
+                              <span style={{ fontSize: 11.5, color: T.textDim, fontVariantNumeric: "tabular-nums" }}>{r.time}</span>
                             </div>
-                          </div>
+                          </motion.div>
                         ))}
                       </div>
-                    </div>
+                    </Card>
                   )}
-                </>
-              )}
 
-              {!stats && (
-                <div style={{ background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.05)", borderRadius:14, padding:"22px 16px", textAlign:"center" }}>
-                  <p style={{ fontSize:13, color:"#2d3748" }}>No analytics yet. Generate traffic to see data.</p>
-                </div>
+                  {/* Empty state */}
+                  {!stats && (
+                    <Card style={{ textAlign: "center", padding: "44px 20px" }}>
+                      <BarChart2 size={26} color={T.textDim} style={{ margin: "0 auto 12px" }} />
+                      <p style={{ fontSize: 14, color: T.textDim, marginBottom: 5 }}>No analytics yet</p>
+                      <p style={{ fontSize: 12.5, color: T.textDim, opacity: 0.6 }}>
+                        Share your link or simulate traffic to see live data.
+                      </p>
+                    </Card>
+                  )}
+                </motion.div>
               )}
-            </div>
-          )}
+            </AnimatePresence>
+          </div>
 
-          <div style={{ marginTop:36, textAlign:"center" }}>
-            <p style={{ fontSize:12, color:"#1e293b", marginBottom:5 }}>Real-time event streaming powered by WebSockets and Redis</p>
-            <p style={{ fontSize:10.5, color:"#161622", letterSpacing:".03em" }}>Built with Redis caching · API-key authentication · rate limiting · real-time analytics pipeline</p>
+          {/* ── Footer ── */}
+          <div style={{ marginTop: 56, textAlign: "center" }}>
+            <p style={{ fontSize: 12, color: T.textDim, marginBottom: 5, letterSpacing: ".01em" }}>
+              Real-time events via WebSocket · Redis-backed · API-key auth · Rate limited
+            </p>
+            <p style={{ fontSize: 11, color: T.textDim, opacity: 0.45, letterSpacing: ".03em" }}>
+              sniplink v2.0 — built for developers
+            </p>
           </div>
         </div>
       </div>
 
-      <Toast msg={toast.msg} type={toast.type} />
+      {/* Toast */}
+      <AnimatePresence>
+        {toast.msg && <Toast key={toast.msg} msg={toast.msg} type={toast.type} />}
+      </AnimatePresence>
     </>
   );
 }
