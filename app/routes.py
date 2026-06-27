@@ -87,7 +87,7 @@ def shorten(request: Request, body: ShortenRequest, db: Session = Depends(get_db
     db.commit()
 
     return {
-    "short_url": f"https://smart-url-shortner.vercel.app/{short_code}"
+    "short_url": f"https://smart-url-shortner.onrender.com/{short_code}"
     }
 
 def create_click(short_code, request, db):
