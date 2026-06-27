@@ -23,6 +23,21 @@ app.include_router(router, prefix="/api")
 def root():
     return {"status": "API running 🚀"}
 
+from fastapi.responses import RedirectResponse
+from app.database import SessionLocal
+from app.models import URL
+
+@app.get("/{short_code}")
+def redirect(short_code: str):
+    db = SessionLocal()
+
+    url = db.query(URL).filter(URL.short_code == short_code).first()
+
+    if not url:
+        return {"detail": "Not Found"}
+
+    return RedirectResponse(url.long_url)
+
 @app.websocket("/ws")
 async def websocket(ws: WebSocket):
     await ws.accept()
